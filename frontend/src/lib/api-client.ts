@@ -9,11 +9,13 @@ import {
   dashboardSummary, interviewPrep, notifications,
   researchOpportunities, researchOutreach,
   type User, type Profile, type Posting, type Match, type Application,
-  type Referral, type Contact, type DashboardSummary, type InterviewPrep,
+  type Referral, type Contact, type DashboardSummary, type InterviewPrep, type InterviewQuestion,
   type Notification, type Artifact, type ApplicationStatus,
   type ResearchOpportunity, type ResearchOutreach, type ResearchOutreachStatus,
   type ResearchPitch,
 } from "./mocks";
+
+export type { User } from "./mocks";
 
 export const API_BASE_URL = (import.meta as any).env?.VITE_API_BASE_URL ?? "/api";
 const USE_MOCKS = ((import.meta as any).env?.VITE_USE_MOCKS ?? "true") !== "false";
@@ -45,21 +47,43 @@ function shouldUseMocks(): boolean {
 const delay = (ms = 180) => new Promise<void>((r) => setTimeout(r, ms));
 
 // ---------------------------------------------------------------------------
-// Token helpers
+// Token + user storage helpers
 // ---------------------------------------------------------------------------
 
 const TOKEN_KEY = "internpilot_token";
+const USER_KEY = "internpilot_user";
 
 export function getToken(): string | null {
+  if (typeof localStorage === "undefined") return null;
   return localStorage.getItem(TOKEN_KEY);
 }
 
 export function setToken(token: string): void {
+  if (typeof localStorage === "undefined") return;
   localStorage.setItem(TOKEN_KEY, token);
 }
 
 export function clearToken(): void {
+  if (typeof localStorage === "undefined") return;
   localStorage.removeItem(TOKEN_KEY);
+}
+
+export function getStoredUser(): User | null {
+  if (typeof localStorage === "undefined") return null;
+  try {
+    const raw = localStorage.getItem(USER_KEY);
+    return raw ? (JSON.parse(raw) as User) : null;
+  } catch { return null; }
+}
+
+function storeUser(u: User): void {
+  if (typeof localStorage === "undefined") return;
+  localStorage.setItem(USER_KEY, JSON.stringify(u));
+}
+
+function clearStoredUser(): void {
+  if (typeof localStorage === "undefined") return;
+  localStorage.removeItem(USER_KEY);
 }
 
 // ---------------------------------------------------------------------------
@@ -148,6 +172,7 @@ export async function authSignup(name: string, email: string, password: string):
     { skipAuthRedirect: true },
   );
   setToken(data.token);
+  storeUser(mapUser(data));
   setGuestMode(false);
   return data;
 }
@@ -159,16 +184,16 @@ export async function authLogin(email: string, password: string): Promise<AuthPa
     { skipAuthRedirect: true },
   );
   setToken(data.token);
+  storeUser(mapUser(data));
   setGuestMode(false);
   return data;
 }
 
 export async function authLogout(): Promise<void> {
-  try {
-    await http("/auth/logout", { method: "POST" });
-  } finally {
-    clearToken();
-  }
+  try { await http("/auth/logout", { method: "POST" }); } catch { /* ignore */ }
+  clearToken();
+  clearStoredUser();
+  setGuestMode(false);
 }
 
 // ---------------------------------------------------------------------------
@@ -391,6 +416,30 @@ function mapResearchOpportunity(raw: any): ResearchOpportunity {
   };
 }
 
+// Backend POST /interview-prep → { prep: InterviewPrepSchema }
+function mapInterviewPrep(raw: any): InterviewPrep {
+  return {
+    id: String(raw.id ?? ""),
+    application_id: String(raw.application_id ?? ""),
+    company_name: raw.company_name ?? "",
+    role: raw.role ?? "",
+    opportunity_type: (raw.opportunity_type === "research" ? "research" : "company") as "company" | "research",
+    region: raw.region ?? null,
+    company_type: (raw.company_type as InterviewPrep["company_type"]) ?? "unknown",
+    questions: (raw.questions ?? []).map((q: any): InterviewQuestion => ({
+      q: q.q ?? q.question ?? String(q),
+      type: q.type ?? "technical",
+      category: q.category ?? "cs_fundamentals",
+      difficulty: q.difficulty ?? "medium",
+      answer_guidance: q.answer_guidance ?? "",
+      ideal_answer_outline: q.ideal_answer_outline ?? "",
+    })),
+    weak_spots: raw.weak_spots ?? [],
+    reverse_questions: raw.reverse_questions ?? [],
+    created_at: raw.created_at ?? new Date().toISOString(),
+  };
+}
+
 // Backend POST /research/pitch → ArtifactSchema (not ResearchPitch)
 // Frontend ResearchPitch = { id, opportunity_id, subject, body, generated_at }
 // We adapt ArtifactSchema.content (which should contain email body) → ResearchPitch
@@ -587,20 +636,35 @@ export const api = {
   async getInterviewPrep(id: string): Promise<InterviewPrep | undefined> {
     if (!shouldUseMocks()) {
       const raw = await http<any>(`/interview-prep/${id}`);
-      return raw?.prep ?? raw;
+      return mapInterviewPrep(raw?.prep ?? raw);
     }
     await delay();
     return interviewPrep.id === id ? interviewPrep : undefined;
   },
-  // Returns the most recent interview prep for the user, or a mock if none exist
-  async getDefaultInterviewPrep(): Promise<InterviewPrep> {
+  async createInterviewPrep(company_name: string, role: string): Promise<InterviewPrep> {
     if (!shouldUseMocks()) {
-      // There's no list endpoint for interview preps, so fall back to mock shape
-      // if no prep ID is known. In practice, the prep page should be reached
-      // via a link that includes a real prep ID.
-      return interviewPrep;
+      const raw = await http<any>("/interview-prep", {
+        method: "POST",
+        body: JSON.stringify({ company_name, role }),
+      });
+      return mapInterviewPrep(raw?.prep ?? raw);
     }
+    await delay(500);
+    return { ...interviewPrep, company_name, role, id: `ip_${Date.now()}` };
+  },
+  async getDefaultInterviewPrep(): Promise<InterviewPrep> {
     await delay(); return interviewPrep;
+  },
+  async updatePreferences(prefs: Partial<Profile["preferences"]>): Promise<Profile> {
+    if (!shouldUseMocks()) {
+      const raw = await http<any>("/profile/preferences", {
+        method: "PUT",
+        body: JSON.stringify(prefs),
+      });
+      return mapProfile(raw);
+    }
+    await delay();
+    return { ...profile, preferences: { ...profile.preferences, ...prefs } };
   },
 
   // ---------- Dashboard ----------

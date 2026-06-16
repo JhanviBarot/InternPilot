@@ -60,15 +60,22 @@ function ModeToggle({ mode, onChange }: { mode: Mode; onChange: (m: Mode) => voi
   );
 }
 
+const WORK_MODES = ["remote", "hybrid", "onsite"] as const;
+
 function CompanyFeed() {
   const [sort, setSort] = useState<SortKey>("ev");
   const [hideGhosts, setHideGhosts] = useState(true);
+  const [selectedModes, setSelectedModes] = useState<string[]>([]);
   const { data, loading, error, reload } = useApi(() => api.getMatches(), []);
+
+  const toggleMode = (m: string) =>
+    setSelectedModes((prev) => prev.includes(m) ? prev.filter((x) => x !== m) : [...prev, m]);
 
   const all = data ?? [];
   const ghostsHidden = all.filter((m) => m.is_ghost).length;
   const list = all
     .filter((m) => (hideGhosts ? !m.is_ghost : true))
+    .filter((m) => selectedModes.length === 0 || selectedModes.includes(m.posting.work_mode))
     .sort((a, b) => sort === "match" ? b.match_score - a.match_score : sort === "response" ? b.response_likelihood - a.response_likelihood : b.expected_value - a.expected_value);
 
   return (
@@ -95,7 +102,17 @@ function CompanyFeed() {
           </FilterGroup>
           <FilterGroup label="Work mode">
             <div className="flex flex-wrap gap-1.5 px-3 pb-2">
-              {["remote", "hybrid", "onsite"].map((m) => <Pill key={m}>{m}</Pill>)}
+              {WORK_MODES.map((m) => (
+                <button
+                  key={m}
+                  onClick={() => toggleMode(m)}
+                  className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium transition border focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--ring)] ${selectedModes.includes(m) ? "bg-primary text-primary-foreground border-primary" : "bg-white text-muted-foreground border-hairline hover:bg-secondary"}`}
+                  style={{ borderColor: selectedModes.includes(m) ? undefined : "var(--color-hairline)" }}
+                  aria-pressed={selectedModes.includes(m)}
+                >
+                  {m}
+                </button>
+              ))}
             </div>
           </FilterGroup>
         </div>

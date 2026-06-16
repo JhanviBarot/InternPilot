@@ -1,5 +1,7 @@
-import { Link } from "@tanstack/react-router";
-import { Compass } from "lucide-react";
+import { Link, useNavigate } from "@tanstack/react-router";
+import { Compass, LogOut, User, ChevronDown } from "lucide-react";
+import { useState, useEffect, useRef } from "react";
+import { getStoredUser, authLogout, isGuestMode, type User as AppUser } from "@/lib/api-client";
 
 const links = [
   { to: "/", label: "Home" },
@@ -11,7 +13,45 @@ const links = [
   { to: "/prep", label: "Interview" },
 ];
 
+function getInitials(name: string): string {
+  const parts = name.trim().split(/\s+/);
+  if (parts.length === 1) return parts[0][0]?.toUpperCase() ?? "?";
+  return ((parts[0][0] ?? "") + (parts[parts.length - 1][0] ?? "")).toUpperCase();
+}
+
 export function Nav() {
+  const navigate = useNavigate();
+  const [authUser, setAuthUser] = useState<AppUser | null>(null);
+  const [guest, setGuest] = useState(false);
+  const [dropdownOpen, setDropdownOpen] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    setAuthUser(getStoredUser());
+    setGuest(isGuestMode());
+  }, []);
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+        setDropdownOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, []);
+
+  const handleLogout = async () => {
+    await authLogout();
+    setAuthUser(null);
+    setGuest(false);
+    setDropdownOpen(false);
+    navigate({ to: "/auth" });
+  };
+
+  const loggedIn = !!authUser;
+
   return (
     <header className="sticky top-0 z-40 w-full">
       <div className="mx-auto max-w-7xl px-6">
@@ -37,15 +77,65 @@ export function Nav() {
             ))}
           </nav>
           <div className="flex items-center gap-2">
-            <Link to="/auth" className="hidden sm:inline-flex text-sm text-muted-foreground hover:text-foreground px-3 py-1.5">
-              Sign in
-            </Link>
-            <Link
-              to="/onboarding"
-              className="inline-flex items-center rounded-full bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-[color:var(--primary-hover)]"
-            >
-              Get started
-            </Link>
+            {loggedIn ? (
+              <div className="relative" ref={dropdownRef}>
+                <button
+                  onClick={() => setDropdownOpen((o) => !o)}
+                  className="flex items-center gap-2 rounded-full border px-3 py-1.5 text-sm font-medium hover:bg-secondary transition"
+                  style={{ borderColor: "var(--color-hairline)" }}
+                >
+                  <span className="grid h-7 w-7 place-items-center rounded-full bg-primary text-primary-foreground text-xs font-bold">
+                    {getInitials(authUser.name)}
+                  </span>
+                  <span className="hidden sm:block">{authUser.name.split(" ")[0]}</span>
+                  <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
+                </button>
+                {dropdownOpen && (
+                  <div className="absolute right-0 mt-2 w-44 rounded-xl border bg-white shadow-lg py-1 text-sm"
+                       style={{ borderColor: "var(--color-hairline)" }}>
+                    <Link
+                      to="/onboarding"
+                      onClick={() => setDropdownOpen(false)}
+                      className="flex items-center gap-2 px-4 py-2 text-foreground hover:bg-secondary transition"
+                    >
+                      <User className="h-4 w-4 text-muted-foreground" />
+                      Profile
+                    </Link>
+                    <button
+                      onClick={handleLogout}
+                      className="w-full flex items-center gap-2 px-4 py-2 text-foreground hover:bg-secondary transition"
+                    >
+                      <LogOut className="h-4 w-4 text-muted-foreground" />
+                      Sign out
+                    </button>
+                  </div>
+                )}
+              </div>
+            ) : guest ? (
+              <>
+                <span className="hidden sm:inline-flex text-xs text-muted-foreground bg-secondary rounded-full px-3 py-1.5">
+                  Guest mode
+                </span>
+                <Link
+                  to="/auth"
+                  className="inline-flex items-center rounded-full bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-[color:var(--primary-hover)]"
+                >
+                  Sign up
+                </Link>
+              </>
+            ) : (
+              <>
+                <Link to="/auth" className="hidden sm:inline-flex text-sm text-muted-foreground hover:text-foreground px-3 py-1.5">
+                  Sign in
+                </Link>
+                <Link
+                  to="/onboarding"
+                  className="inline-flex items-center rounded-full bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-[color:var(--primary-hover)]"
+                >
+                  Get started
+                </Link>
+              </>
+            )}
           </div>
         </div>
       </div>
