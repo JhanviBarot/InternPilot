@@ -1,0 +1,110 @@
+import { createFileRoute, Link } from "@tanstack/react-router";
+import { useEffect, useState } from "react";
+import { CalmBackground } from "@/components/live-background";
+import { Nav } from "@/components/nav";
+import { api, useApi } from "@/lib/api-client";
+import { LoadingState, EmptyState, ErrorState } from "@/components/data-states";
+import { FlaskConical, ChevronDown } from "lucide-react";
+import type { ResearchOutreach, ResearchOutreachStatus } from "@/lib/mocks";
+
+export const Route = createFileRoute("/outreach")({
+  head: () => ({ meta: [{ title: "Research outreach — InternPilot" }, { name: "description", content: "Track your professor pitches and replies." }] }),
+  component: Outreach,
+});
+
+const STATUSES: { k: ResearchOutreachStatus; label: string }[] = [
+  { k: "suggested", label: "Suggested" },
+  { k: "drafted", label: "Drafted" },
+  { k: "contacted", label: "Contacted" },
+  { k: "replied", label: "Replied" },
+  { k: "accepted", label: "Accepted" },
+  { k: "declined", label: "Declined" },
+  { k: "no_response", label: "No response" },
+];
+
+const TONE: Record<ResearchOutreachStatus, { bg: string; fg: string }> = {
+  suggested: { bg: "var(--color-secondary)", fg: "var(--color-foreground)" },
+  drafted:   { bg: "color-mix(in oklab, var(--color-ghost) 14%, white)", fg: "color-mix(in oklab, var(--color-ghost) 80%, black)" },
+  contacted: { bg: "var(--color-primary-tint)", fg: "var(--color-primary)" },
+  replied:   { bg: "color-mix(in oklab, var(--color-success) 18%, white)", fg: "color-mix(in oklab, var(--color-success) 80%, black)" },
+  accepted:  { bg: "var(--color-primary)", fg: "var(--color-primary-foreground)" },
+  declined:  { bg: "color-mix(in oklab, var(--color-reject) 14%, white)", fg: "var(--color-reject)" },
+  no_response: { bg: "var(--color-secondary)", fg: "var(--color-muted-foreground)" },
+};
+
+function Outreach() {
+  const { data, loading, error, reload } = useApi(() => api.getResearchOutreach(), []);
+  const [local, setLocal] = useState<ResearchOutreach[]>([]);
+  useEffect(() => { if (data) setLocal(data); }, [data]);
+
+  const setStatus = async (id: string, status: ResearchOutreachStatus) => {
+    setLocal((cur) => cur.map((x) => x.id === id ? { ...x, status } : x));
+    await api.setResearchOutreachStatus(id, status);
+  };
+
+  return (
+    <div className="min-h-screen">
+      <CalmBackground />
+      <Nav />
+      <main className="mx-auto max-w-6xl px-6 py-12">
+        <div className="flex items-end justify-between gap-4 flex-wrap">
+          <div>
+            <div className="text-xs uppercase tracking-[0.18em] text-muted-foreground font-mono">Research outreach</div>
+            <h1 className="mt-2 font-display text-5xl md:text-6xl tracking-tight">Every lab, tracked.</h1>
+          </div>
+          <Link to="/feed" className="text-sm text-muted-foreground hover:text-foreground">+ Find more labs</Link>
+        </div>
+
+        <div className="mt-10">
+          {loading && <LoadingState label="Loading outreach" />}
+          {error && <ErrorState error={error} onRetry={reload} />}
+          {!loading && !error && local.length === 0 && (
+            <EmptyState icon={FlaskConical} title="No outreach yet."
+              body="Open the research feed, draft a pitch, and save it here to track replies." />
+          )}
+          {!loading && !error && local.length > 0 && (
+            <div className="card-soft overflow-hidden">
+              <div className="grid grid-cols-[1.6fr_1fr_180px_120px] gap-4 px-6 py-3 border-b text-[10px] uppercase tracking-[0.18em] text-muted-foreground font-mono"
+                   style={{ borderColor: "var(--color-hairline)" }}>
+                <span>Professor · lab</span>
+                <span>Institution</span>
+                <span>Status</span>
+                <span className="text-right">Last update</span>
+              </div>
+              {local.map((r) => (
+                <div key={r.id} className="grid grid-cols-[1.6fr_1fr_180px_120px] gap-4 items-center px-6 py-4 border-b last:border-0"
+                     style={{ borderColor: "var(--color-hairline)" }}>
+                  <div className="min-w-0">
+                    <div className="font-medium truncate">{r.opportunity.professor_name}</div>
+                    <div className="text-xs text-muted-foreground truncate">{r.opportunity.lab_name}</div>
+                  </div>
+                  <div className="text-sm text-muted-foreground truncate">{r.opportunity.institution}</div>
+                  <StatusPicker status={r.status} onChange={(s) => setStatus(r.id, s)} />
+                  <div className="text-right text-xs text-muted-foreground font-mono">{r.last_status_at}</div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </main>
+    </div>
+  );
+}
+
+function StatusPicker({ status, onChange }: { status: ResearchOutreachStatus; onChange: (s: ResearchOutreachStatus) => void }) {
+  const tone = TONE[status];
+  return (
+    <div className="relative">
+      <select
+        value={status}
+        onChange={(e) => onChange(e.target.value as ResearchOutreachStatus)}
+        className="appearance-none w-full rounded-full px-3 py-1.5 pr-8 text-xs font-medium focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--ring)]"
+        style={{ background: tone.bg, color: tone.fg }}
+        aria-label="Status"
+      >
+        {STATUSES.map((s) => <option key={s.k} value={s.k}>{s.label}</option>)}
+      </select>
+      <ChevronDown className="pointer-events-none h-3 w-3 absolute right-2.5 top-1/2 -translate-y-1/2" style={{ color: tone.fg }} />
+    </div>
+  );
+}
