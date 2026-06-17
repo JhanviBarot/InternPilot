@@ -12,7 +12,6 @@ import app.models.artifact  # noqa: F401
 import app.models.company  # noqa: F401
 import app.models.contact  # noqa: F401
 import app.models.evaluation  # noqa: F401
-import app.models.interview_prep  # noqa: F401
 import app.models.outcome  # noqa: F401
 import app.models.posting  # noqa: F401
 import app.models.profile  # noqa: F401

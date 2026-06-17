@@ -2,7 +2,9 @@
 
 **Stop applying into the void.**
 
-[![Tests](https://img.shields.io/badge/tests-285%2F285%20passing-22c55e?style=flat-square)](#running-the-test-suite)
+> **Mid-Evaluation Technical Report:** [docs/MID_EVALUATION.md](docs/MID_EVALUATION.md) — full architecture, module breakdown, engineering decisions, real metrics, and reproducibility instructions.
+
+[![Tests](https://img.shields.io/badge/tests-276%2F276%20passing-22c55e?style=flat-square)](#running-the-test-suite)
 [![mypy](https://img.shields.io/badge/mypy-strict-3178c6?style=flat-square)](https://mypy.readthedocs.io/)
 [![ruff](https://img.shields.io/badge/ruff-clean-d7ff64?style=flat-square&labelColor=261230)](https://docs.astral.sh/ruff/)
 [![Python](https://img.shields.io/badge/Python-3.12-3776AB?style=flat-square&logo=python&logoColor=white)](https://www.python.org/)
@@ -54,7 +56,7 @@ All numbers are honest: module status reflects what is built and tested, not wha
 | 11 — Platform IQ Dashboard | **Done** | Pipeline funnel; response rate; ghosts avoided; time saved; Platform IQ learning curve (evaluate_now + build_history) |
 | 12 — Notifications | **Done** | 4 types: `followup_due`, `response`, `status_change`, `new_match`; idempotent generation; user-scoped |
 
-**Test suite: 285 tests across 19 files.** All pass against a live PostgreSQL + pgvector instance.
+**Test suite: 276 tests across 19 files.** All pass against a live PostgreSQL + pgvector instance.
 
 ---
 
@@ -74,7 +76,7 @@ All numbers are honest: module status reflects what is built and tested, not wha
 | Migrations | Alembic async (15 migrations) | Incremental, reviewed, never auto-applied in production |
 | Linting | ruff | Fast; enforces imports, naming, and style in one pass |
 | Types | mypy --strict (76 files) | Catches service-layer contract violations before tests do |
-| Tests | pytest + pytest-asyncio + httpx (285 tests) | Async-native; integration tests hit a real PostgreSQL instance |
+| Tests | pytest + pytest-asyncio + httpx (276 tests) | Async-native; integration tests hit a real PostgreSQL instance |
 | Frontend | TanStack Start + Vite 7 + React 19 + Tailwind | SSR-capable; single `api-client.ts` seam for mock/real switching |
 | Hosting | Planned: Railway (backend) + Vercel (frontend) | Not yet deployed; local dev only at this stage |
 
@@ -179,7 +181,7 @@ Tests require a live PostgreSQL instance with pgvector — keep it separate from
 # Create the test database once
 docker exec internpilot-postgres psql -U postgres -c "CREATE DATABASE internpilot_test;"
 
-# Run all 285 tests
+# Run all 276 tests
 TEST_DATABASE_URL=postgresql+asyncpg://postgres:testpass@localhost:5433/internpilot_test \
   uv run pytest
 
@@ -392,7 +394,7 @@ All numbers are real, traced to `uv run pytest` or direct database queries on th
 
 | Measurement | Value | Source |
 |-------------|-------|--------|
-| Test suite | 285 / 285 passing | `uv run pytest` |
+| Test suite | 276 / 276 passing | `uv run pytest` |
 | mypy | 0 errors (strict, 76 files) | `uv run mypy app` |
 | ruff | 0 violations | `uv run ruff check .` |
 | Alembic migrations | 15 (0001–0015) | `alembic/versions/` |
@@ -438,7 +440,7 @@ app/
   api/v1/                   Thin routers (51 endpoints, no business logic)
   sources/                  Ingestion adapters (Greenhouse, Ashby, Lever, RemoteOK, Remotive)
 alembic/versions/           15 reviewed migrations (0001_initial → 0015_drop_interview_prep)
-tests/                      285 tests across 19 test files
+tests/                      276 tests across 19 test files
 scripts/
   probe_refresh.py          Aggregate real postings from all 5 sources
   seed_demo.py              14 demo users + 364 application-outcome pairs
