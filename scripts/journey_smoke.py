@@ -1,6 +1,7 @@
 """Journey smoke test — walks the full user journey against the live backend."""
 import asyncio
 import time
+
 import httpx
 
 BASE = "http://localhost:8000/api"
@@ -121,18 +122,15 @@ async def main() -> None:
         assert r.status_code == 200, f"Research pitch failed: {r.text}"
         assert pitch_type == "research_pitch", f"Expected type=research_pitch, got {pitch_type}"
 
-        print("\n--- Part 3: Interview Prep + Dashboard + Evaluation ---")
+        print("\n--- Part 3: Notifications + Dashboard + Evaluation ---")
 
-        # [10] POST /interview-prep — requires company_name + role (no posting_id/round)
-        r = await c.post(f"{BASE}/interview-prep", headers=headers, json={
-            "company_name": "Google DeepMind",
-            "role": "Research Intern",
-        })
+        # [10] GET /notifications — returns {data: [...], unread_count}
+        r = await c.get(f"{BASE}/notifications", headers=headers)
         d = r.json()
-        prep = d.get("prep", {})
-        q_count = len(prep.get("questions", []))
-        print(f"[10] POST /interview-prep -> {r.status_code}  questions={q_count}")
-        assert r.status_code in (200, 201), f"Interview prep failed: {r.text}"
+        notif_count = len(d.get("data", []))
+        unread = d.get("unread_count", 0)
+        print(f"[10] GET /notifications -> {r.status_code}  count={notif_count}  unread={unread}")
+        assert r.status_code == 200, f"Notifications failed: {r.text}"
 
         # [11] GET /dashboard — shape: {pipeline:{saved,applied,...}, platform_iq, iq_trend, ...}
         r = await c.get(f"{BASE}/dashboard", headers=headers)

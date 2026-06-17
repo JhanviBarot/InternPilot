@@ -2,7 +2,7 @@
 
 **Stop applying into the void.**
 
-[![Tests](https://img.shields.io/badge/tests-316%2F316%20passing-22c55e?style=flat-square)](#running-the-test-suite)
+[![Tests](https://img.shields.io/badge/tests-285%2F285%20passing-22c55e?style=flat-square)](#running-the-test-suite)
 [![mypy](https://img.shields.io/badge/mypy-strict-3178c6?style=flat-square)](https://mypy.readthedocs.io/)
 [![ruff](https://img.shields.io/badge/ruff-clean-d7ff64?style=flat-square&labelColor=261230)](https://docs.astral.sh/ruff/)
 [![Python](https://img.shields.io/badge/Python-3.12-3776AB?style=flat-square&logo=python&logoColor=white)](https://www.python.org/)
@@ -10,11 +10,185 @@
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-17-336791?style=flat-square&logo=postgresql&logoColor=white)](https://www.postgresql.org/)
 [![pgvector](https://img.shields.io/badge/pgvector-0.8-336791?style=flat-square)](https://github.com/pgvector/pgvector)
 [![SQLAlchemy](https://img.shields.io/badge/SQLAlchemy-2.0%20async-D71F00?style=flat-square)](https://www.sqlalchemy.org/)
-[![Pydantic](https://img.shields.io/badge/Pydantic-v2-E92063?style=flat-square&logo=pydantic&logoColor=white)](https://docs.pydantic.dev/)
 [![Docker](https://img.shields.io/badge/Docker-required-2496ED?style=flat-square&logo=docker&logoColor=white)](https://www.docker.com/)
 [![React](https://img.shields.io/badge/React-TanStack%20Start-61DAFB?style=flat-square&logo=react&logoColor=black)](https://tanstack.com/start)
 [![Vite](https://img.shields.io/badge/Vite-7-646CFF?style=flat-square&logo=vite&logoColor=white)](https://vitejs.dev/)
 [![License](https://img.shields.io/badge/license-MIT-green?style=flat-square)](LICENSE)
+
+---
+
+## Problem Statement
+
+The internship application pipeline is broken at every layer.
+
+**Ghost jobs are everywhere.** Academic research consistently finds that 20–30% of job listings receive no meaningful recruiter action — postings left open for weeks with no interviews scheduled, reposted across boards to signal fake activity. Students spend hours crafting applications that will never be read.
+
+**There is no fit signal.** A student has no way to know whether they are a 20% match or an 85% match before applying. Generic job boards surface every posting equally. The result is mass-blast behaviour — applicants fire the same résumé at 80 companies and wait.
+
+**Materials are fabricated, not grounded.** AI-assisted cover letters routinely claim skills the applicant does not have. This produces high ATS scores against JDs but poor grounding against the actual profile — a signal of future interview failure.
+
+**The referral path is invisible.** Warm introductions convert at 3–5× the rate of cold applications, but most applicants have no systematic way to find who they know (or who their alumni know) at a target company.
+
+**Who suffers:** undergraduate and master's students applying to competitive technical internships — typically submitting 40–100 applications per cycle with a 2–6% response rate and no feedback signal.
+
+InternPilot treats job hunting as a **prediction problem**: score every posting for ghost probability, estimate per-company response likelihood from real cross-user outcome data, and generate materials anchored strictly to what the profile can truthfully claim. A self-grading evaluation loop measures its own prediction accuracy against real outcomes and reports an honest learning curve.
+
+---
+
+## Current Progress
+
+All numbers are honest: module status reflects what is built and tested, not what is planned.
+
+| Module | Status | Description |
+|--------|--------|-------------|
+| 0 — Auth | **Done** | Signup, login, JWT, Google OIDC; per-user data isolation enforced at service layer |
+| 1 — Career Twin | **Done** | Résumé parsing (LLM extraction), GitHub connect, skills / experience / projects / research interests; `profile_strength` score (0–100) with gap detection |
+| 2 — Ingestion | **Done** | 5 sources: Greenhouse, Ashby, Lever, RemoteOK, Remotive; dedup + normalize; `source_sightings` counter updated at ingest |
+| 3 — Ghost Shield | **Done** | 5-signal weighted model: posting age (0.30) + cross-board repost (0.20) + JD vagueness (0.25) + company ghost history (0.15) + cohort non-response (0.10); threshold 0.38 |
+| 4 — Matching & Ranking | **Done** | Semantic match = 0.7 × cosine + 0.3 × skill overlap; `expected_value = match × RL × (1 − ghost)` |
+| 5 — Response Likelihood | **Done** | Cohort path: 0.55 × cohort_rate + 0.35 × freshness + 0.10 × ghost-inv; cold-start: 0.65 × freshness + 0.35 × ghost-history |
+| 6 — Application Assistant | **Done** | Cover letter / email / referral intro; grounding guard whitelists profile skills; ATS scoring; anti-fabrication retry loop |
+| 7 — Tracker / Outcomes | **Done** | Status transitions: saved → applied → viewed → responded → interview → offer / rejected / ghosted; outcome recording; Gmail sync (consent-gated) |
+| 8 — Referral Finder | **Done** | Alumni matching by university + company; referral intro draft via LLM router; status tracking |
+| 10 — Research Vertical | **Done** | Research opportunity ranking (fit_score via embedding match on `research_interests`); cold-email pitch generation with same anti-fabrication guard as applications; outreach tracking |
+| 11 — Platform IQ Dashboard | **Done** | Pipeline funnel; response rate; ghosts avoided; time saved; Platform IQ learning curve (evaluate_now + build_history) |
+| 12 — Notifications | **Done** | 4 types: `followup_due`, `response`, `status_change`, `new_match`; idempotent generation; user-scoped |
+
+**Test suite: 285 tests across 19 files.** All pass against a live PostgreSQL + pgvector instance.
+
+---
+
+## Tech Stack
+
+| Layer | Choice | Why |
+|-------|--------|-----|
+| Runtime | Python 3.12 | Async-native; CPU-bound work (embeddings, calibration) offloaded via `asyncio.to_thread` |
+| API | FastAPI 0.115 + uvicorn[standard] | Async-native, Pydantic v2 validation, automatic OpenAPI |
+| ORM | SQLAlchemy 2.0 async + asyncpg | True async; no sync engine anywhere |
+| Database | PostgreSQL 17 + pgvector 0.8 | Relational integrity + cosine-distance vector search in one engine |
+| Validation | Pydantic v2 strict mode | Catches shape mismatches at the boundary, not at runtime |
+| Embeddings | sentence-transformers all-MiniLM-L6-v2 (dim=384) | Free, local, fast; zero embedding API cost |
+| LLM | 5-provider fallback router (Gemini → Groq → OpenRouter → DeepSeek → Ollama) | Resilience + near-zero cost; Groq free tier handles most dev calls |
+| Calibration | scikit-learn LogisticRegression | Lightweight; training set is a few hundred to a few thousand rows |
+| Auth | python-jose JWT + passlib argon2 + Google OIDC | argon2 is the current best practice for password hashing |
+| Migrations | Alembic async (15 migrations) | Incremental, reviewed, never auto-applied in production |
+| Linting | ruff | Fast; enforces imports, naming, and style in one pass |
+| Types | mypy --strict (76 files) | Catches service-layer contract violations before tests do |
+| Tests | pytest + pytest-asyncio + httpx (285 tests) | Async-native; integration tests hit a real PostgreSQL instance |
+| Frontend | TanStack Start + Vite 7 + React 19 + Tailwind | SSR-capable; single `api-client.ts` seam for mock/real switching |
+| Hosting | Planned: Railway (backend) + Vercel (frontend) | Not yet deployed; local dev only at this stage |
+
+---
+
+## Planned Features
+
+These are plans, not shipped work:
+
+- **Live outcome ingestion.** Gmail OAuth sync is wired at `/api/integrations/gmail/sync` — connecting to a real inbox will start populating real outcomes and improve the IQ curve beyond the seed data.
+- **Production deploy.** Backend → Railway (PostgreSQL + pgvector add-on); frontend → Vercel. Currently runs locally only.
+- **Research vertical expansion.** The 20 seeded research opportunities are a starting point. A live paper-fetch integration (Semantic Scholar / arXiv) would make pitch generation more specific to recent work.
+- **Response Likelihood v2.** Once real outcome volume reaches ~500 pairs, replacing the logistic calibrator with a gradient-boosted model is a natural next step.
+- **Lever source activation.** `app/sources/lever.py` is implemented. It is excluded from the default refresh loop pending slug discovery tooling.
+
+---
+
+## Setup Instructions
+
+### Prerequisites
+
+- Python 3.12
+- [uv](https://github.com/astral-sh/uv) — `pip install uv`
+- Docker Desktop (for PostgreSQL + pgvector)
+- Node.js 18+ and npm
+- At least one LLM API key (Groq free tier is sufficient for development)
+
+### 1. Clone and configure
+
+```bash
+git clone https://github.com/Om-5640/InternPilot.git
+cd InternPilot
+
+cp .env.example .env
+# Edit .env — set DATABASE_URL, JWT_SECRET, and one LLM key at minimum
+```
+
+Key env vars in `.env.example`:
+
+```
+DATABASE_URL=postgresql+asyncpg://postgres:testpass@localhost:5433/internpilot
+JWT_SECRET=change-me-in-production
+GEMINI_API_KEY=
+GROQ_API_KEY=
+OPENROUTER_API_KEY=
+GOOGLE_CLIENT_ID=
+CORS_ORIGINS=http://localhost:5173
+```
+
+### 2. Start PostgreSQL with pgvector
+
+```bash
+docker run -d \
+  --name internpilot-postgres \
+  -e POSTGRES_PASSWORD=testpass \
+  -p 5433:5432 \
+  pgvector/pgvector:pg17
+```
+
+### 3. Install Python dependencies and run migrations
+
+```bash
+uv sync --all-extras
+uv run alembic upgrade head
+```
+
+### 4. Seed demo data (recommended)
+
+Gives you 14 demo users, 364 application-outcome pairs, and 20 research opportunities — enough to exercise the Ghost Shield, cohort signal, and Platform IQ learning curve.
+
+```bash
+uv run python scripts/probe_refresh.py   # aggregate real postings (Greenhouse, Ashby, RemoteOK, Remotive)
+uv run python scripts/seed_demo.py       # 14 demo users + 364 application-outcome pairs
+uv run python scripts/seed_research.py  # 20 research opportunities across IITs, IISc, MIT, Stanford, CMU, ETH, UTokyo, KTH, TIFR, ISI
+uv run python scripts/smoke_replay.py   # replay Platform IQ learning curve
+```
+
+### 5. Start the backend
+
+```bash
+uv run uvicorn app.main:app --reload
+# API:  http://localhost:8000
+# Docs: http://localhost:8000/api/docs
+```
+
+### 6. Start the frontend
+
+```bash
+cd frontend
+npm install
+npm run dev
+# UI: http://localhost:5173
+```
+
+Open `http://localhost:5173/auth` and sign up with any email. Set `VITE_USE_MOCKS=false` in `frontend/.env` to connect to the live backend; leave it as `true` (default) for in-memory mocks.
+
+### 7. Run the test suite
+
+Tests require a live PostgreSQL instance with pgvector — keep it separate from the dev database.
+
+```bash
+# Create the test database once
+docker exec internpilot-postgres psql -U postgres -c "CREATE DATABASE internpilot_test;"
+
+# Run all 285 tests
+TEST_DATABASE_URL=postgresql+asyncpg://postgres:testpass@localhost:5433/internpilot_test \
+  uv run pytest
+
+# Type-check (strict)
+uv run mypy app
+
+# Lint
+uv run ruff check .
+```
 
 ---
 
@@ -187,8 +361,6 @@ Alumni matching across users requires that "IIT Delhi", "Indian Institute of Tec
 
 **Track — application tracker.** Applications move through statuses: `saved → applied → viewed → responded → interview → offer / rejected / ghosted`. Follow-up drafts are available per application. Gmail sync (with user consent) auto-detects replies and creates outcome records.
 
-**Interview Prep.** `POST /api/interview-prep` generates questions with category, difficulty, and ideal answer outlines; weak spots from the profile; and reverse questions for the interviewer. The system classifies the company type and tailors round structure accordingly.
-
 **Research Vertical.** A dedicated ranking feed for research internships (`/research/opportunities`) scores opportunities using the same 70/30 semantic+skill formula, matching on `research_interests`. Cold-email pitch generation (`/research/pitch`) uses the same anti-fabrication guard as application drafts.
 
 **Platform IQ Dashboard.** `GET /api/dashboard` returns pipeline breakdown, response rate, ghosts avoided, time saved, and the global Platform IQ with its IQ trend — a real learning curve, not a vanity metric.
@@ -214,38 +386,17 @@ The evaluation pipeline runs in two modes, both in `app/services/evaluation_serv
 
 ---
 
-## Tech stack
-
-| Layer | Choice | Why |
-|-------|--------|-----|
-| Runtime | Python 3.12 | Async-native; CPU-bound work (embeddings, calibration) offloaded via `asyncio.to_thread` |
-| API | FastAPI 0.115 + uvicorn[standard] | Async-native, Pydantic v2 validation, automatic OpenAPI |
-| ORM | SQLAlchemy 2.0 async + asyncpg | True async; no sync engine anywhere |
-| Database | PostgreSQL 17 + pgvector 0.8 | Relational integrity + cosine-distance vector search in one engine |
-| Validation | Pydantic v2 strict mode | Catches shape mismatches at the boundary, not at runtime |
-| Embeddings | sentence-transformers all-MiniLM-L6-v2 (dim=384) | Free, local, fast; zero embedding API cost |
-| LLM | 5-provider fallback router | Resilience + near-zero cost (Groq free tier handles most dev calls) |
-| Calibration | scikit-learn LogisticRegression | Lightweight; training set is a few hundred to a few thousand rows |
-| Auth | python-jose JWT + passlib argon2 + Google OIDC | argon2 is the current best practice for password hashing |
-| Migrations | Alembic async (14 migrations) | Incremental, reviewed, never auto-applied in production |
-| Linting | ruff | Fast; enforces imports, naming, and style in one pass |
-| Types | mypy --strict (80 files) | Catches service-layer contract violations before tests do |
-| Tests | pytest + pytest-asyncio + httpx (316 tests) | Async-native; integration tests hit a real PostgreSQL instance |
-| Frontend | TanStack Start + Vite + React | SSR-capable; single `api-client.ts` seam for mock/real switching |
-
----
-
 ## Results — what we measured
 
 All numbers are real, traced to `uv run pytest` or direct database queries on the seed dataset. There are no invented benchmarks.
 
 | Measurement | Value | Source |
 |-------------|-------|--------|
-| Test suite | 316 / 316 passing | `uv run pytest` |
-| mypy | 0 errors (strict, 80 files) | `uv run mypy app` |
+| Test suite | 285 / 285 passing | `uv run pytest` |
+| mypy | 0 errors (strict, 76 files) | `uv run mypy app` |
 | ruff | 0 violations | `uv run ruff check .` |
-| Alembic migrations | 14 (0001–0014) | `alembic/versions/` |
-| API endpoints | 53 | `grep "^@router\." app/api/v1/*.py` |
+| Alembic migrations | 15 (0001–0015) | `alembic/versions/` |
+| API endpoints | 51 | `grep "^@router\." app/api/v1/*.py` |
 | Platform IQ (full set, 364 pairs) | **66.7** | `EvaluationService.evaluate_now()` |
 | Response Brier (full set) | 0.226 | same |
 | Response AUC | 0.769 | same |
@@ -260,103 +411,6 @@ All numbers are real, traced to `uv run pytest` or direct database queries on th
 
 ---
 
-## Getting started
-
-### Prerequisites
-
-- Python 3.12
-- [uv](https://github.com/astral-sh/uv) — `pip install uv`
-- Docker Desktop
-- Node.js 18+ and npm
-- At least one LLM API key (Groq free tier is sufficient for development)
-
-### 1. Clone and configure
-
-```bash
-git clone https://github.com/Om-5640/InternPilot.git
-cd InternPilot
-
-cp .env.example .env
-# Edit .env — at minimum set DATABASE_URL, JWT_SECRET, and one LLM key
-```
-
-### 2. Start PostgreSQL with pgvector
-
-```bash
-docker run -d \
-  --name internpilot-postgres \
-  -e POSTGRES_PASSWORD=testpass \
-  -p 5433:5432 \
-  pgvector/pgvector:pg17
-```
-
-### 3. Install Python dependencies and run migrations
-
-```bash
-uv sync --all-extras
-uv run alembic upgrade head
-```
-
-### 4. Seed demo data (recommended)
-
-This gives you 14 demo users, 364 application-outcome pairs, and 20 research opportunities — enough to exercise the Ghost Shield, cohort signal, and the Platform IQ learning curve.
-
-```bash
-uv run python scripts/probe_refresh.py   # aggregate real postings (Greenhouse, Ashby, RemoteOK, Remotive)
-uv run python scripts/seed_demo.py       # 14 demo users + 364 application-outcome pairs
-uv run python scripts/seed_research.py  # 20 research opportunities across IITs, IISc, MIT, Stanford, CMU, ETH, UTokyo, KTH, TIFR, ISI
-uv run python scripts/smoke_replay.py   # replay Platform IQ learning curve
-```
-
-### 5. Start the backend
-
-```bash
-uv run uvicorn app.main:app --reload
-# API:  http://localhost:8000
-# Docs: http://localhost:8000/docs
-```
-
-### 6. Start the frontend
-
-```bash
-cd frontend
-npm install
-npm run dev
-# UI: http://localhost:5173
-```
-
-Open `http://localhost:5173/auth` and sign up with any email.
-
-### 7. End-to-end smoke test
-
-```bash
-uv run python scripts/journey_smoke.py
-# Walks 12 journey steps against the live backend and asserts every response shape
-```
-
----
-
-## Running the test suite
-
-Tests require a live PostgreSQL instance with pgvector. Keep the test database separate from the dev database.
-
-```bash
-# Create the test database once
-docker exec internpilot-postgres psql -U postgres -c "CREATE DATABASE internpilot_test;"
-
-# Run all 316 tests
-TEST_DATABASE_URL=postgresql+asyncpg://postgres:testpass@localhost:5433/internpilot_test \
-  uv run pytest
-
-# Type-check (strict)
-uv run mypy app
-
-# Lint
-uv run ruff check .
-```
-
----
-
 ## Project structure
 
 ```
@@ -367,7 +421,7 @@ app/
     database.py             async engine + get_db() dependency
     security.py             JWT create/verify + get_current_user
     errors.py               APIError + global exception handlers
-  models/                   SQLAlchemy ORM models (14 tables)
+  models/                   SQLAlchemy ORM models (13 tables)
   schemas/                  Pydantic v2 request/response schemas
   services/
     ghost_service.py        5-signal Ghost-Job Shield (no LLM)
@@ -377,14 +431,14 @@ app/
     evaluation_service.py   Platform IQ — evaluate_now + build_history
     research_service.py     Research opportunity ranking + pitch generation
     university_normalizer.py  Deterministic name canonicalization
-    ...                     (16 service files total)
+    ...                     (15 service files total)
   llm/
     router.py               5-provider fallback chain
     embeddings.py           Local all-MiniLM-L6-v2, EMBEDDING_DIM=384
-  api/v1/                   Thin routers (53 endpoints, no business logic)
+  api/v1/                   Thin routers (51 endpoints, no business logic)
   sources/                  Ingestion adapters (Greenhouse, Ashby, Lever, RemoteOK, Remotive)
-alembic/versions/           14 reviewed migrations (0001_initial → 0014_research)
-tests/                      316 tests across 20 test files
+alembic/versions/           15 reviewed migrations (0001_initial → 0015_drop_interview_prep)
+tests/                      285 tests across 19 test files
 scripts/
   probe_refresh.py          Aggregate real postings from all 5 sources
   seed_demo.py              14 demo users + 364 application-outcome pairs
@@ -393,7 +447,7 @@ scripts/
   journey_smoke.py          End-to-end 12-step API smoke test
 frontend/
   src/lib/api-client.ts     Single HTTP client — mock/real via VITE_USE_MOCKS
-  src/routes/               TanStack Start file-based routes
+  src/routes/               TanStack Start file-based routes (11 routes)
 API_CONTRACT.md             Field-level API contract — change here first
 CLAUDE.md                   Developer conventions — stack, patterns, module discipline
 ```
@@ -402,18 +456,7 @@ CLAUDE.md                   Developer conventions — stack, patterns, module di
 
 ---
 
-## Roadmap
-
-- **Live outcome ingestion.** Gmail OAuth sync is wired at `/api/integrations/gmail/sync` — connecting to a real inbox will start populating real outcomes and improve the IQ curve beyond the seed data.
-- **Research vertical expansion.** The 20 seeded research opportunities are a starting point. A live paper-fetch integration (Semantic Scholar / arXiv) would make pitch generation more specific to recent work.
-- **Response Likelihood v2.** Once real outcome volume reaches ~500 pairs, replacing the logistic calibrator with a gradient-boosted model is a natural next step.
-- **Lever source activation.** `app/sources/lever.py` is implemented. It is excluded from the default refresh loop pending slug discovery tooling.
-
----
-
 ## Screenshots / Demo
-
-<!-- Drop screenshots or a Loom / YouTube link here -->
 
 | Screen | What to see |
 |--------|-------------|

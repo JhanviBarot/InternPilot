@@ -17,7 +17,6 @@ from app.api.v1 import dashboard as dashboard_router
 from app.api.v1 import evaluation as evaluation_router
 from app.api.v1 import health as health_router
 from app.api.v1 import integrations as integrations_router
-from app.api.v1 import interview_prep as interview_prep_router
 from app.api.v1 import matches as matches_router
 from app.api.v1 import notifications as notifications_router
 from app.api.v1 import postings as postings_router
@@ -97,7 +96,6 @@ app.include_router(matches_router.router, prefix="/api")
 app.include_router(applications_router.router, prefix="/api")
 app.include_router(integrations_router.router, prefix="/api")
 app.include_router(referrals_router.router, prefix="/api")
-app.include_router(interview_prep_router.router, prefix="/api")
 app.include_router(evaluation_router.router, prefix="/api")
 app.include_router(dashboard_router.router, prefix="/api")
 app.include_router(notifications_router.router, prefix="/api")

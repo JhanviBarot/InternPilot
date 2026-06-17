@@ -15,7 +15,6 @@ from sqlalchemy.orm import selectinload
 from app.core.errors import APIError
 from app.models.application import Application
 from app.models.company import Company
-from app.models.interview_prep import InterviewPrep
 from app.models.notification import Notification
 from app.models.posting import Posting
 from app.services.base import BaseService
@@ -76,8 +75,6 @@ class NotificationService(BaseService):
         if not apps:
             return
 
-        app_ids = [a.id for a in apps]
-
         # Resolve posting + company for each app in one query
         posting_rows = (
             await self.db.execute(
@@ -94,25 +91,9 @@ class NotificationService(BaseService):
         followup_existing = await self._existing_contents("followup_due")
         response_existing = await self._existing_contents("response")
         status_existing = await self._existing_contents("status_change")
-        prep_existing = await self._existing_contents("prep_ready")
 
         cutoff_followup = now - timedelta(days=FOLLOWUP_DAYS)
         cutoff_recent = now - timedelta(days=_RECENT_DAYS)
-
-        # Existing prep sessions for this user
-        raw_prep_ids = (
-            (
-                await self.db.execute(
-                    select(InterviewPrep.application_id).where(
-                        InterviewPrep.user_id == self.user_id,
-                        InterviewPrep.application_id.in_(app_ids),
-                    )
-                )
-            )
-            .scalars()
-            .all()
-        )
-        prep_app_ids: set[uuid.UUID] = {aid for aid in raw_prep_ids if aid is not None}
 
         for app in apps:
             role, company = posting_map.get(app.posting_id, ("this role", "the company"))
@@ -152,13 +133,6 @@ class NotificationService(BaseService):
                     f"Your {role} application at {company} moved to {app.status}."
                 )
                 await self._add("status_change", content, status_existing)
-
-            # prep_ready — positive outcome and no prep session yet
-            if positive and app.id not in prep_app_ids:
-                content = (
-                    f"You're advancing at {company}! Get AI interview prep for your {role} role."
-                )
-                await self._add("prep_ready", content, prep_existing)
 
         await self.db.commit()
 

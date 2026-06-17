@@ -123,33 +123,6 @@ export type Referral = {
   created_at: string;
 };
 
-export type InterviewQuestionCategory =
-  | "coding" | "cs_fundamentals" | "project" | "behavioral" | "hr" | "gd"
-  | "research_fit" | "domain_depth" | "methods";
-
-export type InterviewQuestion = {
-  q: string;
-  type: "technical" | "behavioral" | "gd";
-  category: InterviewQuestionCategory;
-  difficulty: "easy" | "medium" | "hard";
-  answer_guidance: string;
-  ideal_answer_outline: string;
-};
-
-export type InterviewPrep = {
-  id: string;
-  application_id: string;
-  company_name: string;
-  role: string;
-  opportunity_type: "company" | "research";
-  region: string | null;
-  company_type: "product" | "service" | "research_lab" | "unknown";
-  questions: InterviewQuestion[];
-  weak_spots: string[];
-  reverse_questions: string[];
-  created_at: string;
-};
-
 export type DashboardSummary = {
   pipeline: {
     saved: number; applied: number; viewed: number; responded: number;
@@ -336,38 +309,10 @@ export const dashboardSummary: DashboardSummary = {
   ],
 };
 
-export const interviewPrep: InterviewPrep = {
-  id: "ip_1",
-  application_id: "a_1",
-  company_name: "Anthropic",
-  role: "Research Engineer Intern, Inference",
-  opportunity_type: "company",
-  region: "North America",
-  company_type: "product",
-  reverse_questions: [
-    "What does a great first 90 days on this team look like?",
-    "Where does inference research feed back into product, and how fast?",
-    "What's the failure mode you most worry about for an intern here?",
-  ],
-  questions: [
-    { q: "Walk me through the CRDT work in rustpad-mini and a tradeoff you made.", type: "technical", category: "project", difficulty: "medium", answer_guidance: "Anchor on the conflict resolution strategy and what it cost in memory.", ideal_answer_outline: "Context → tradeoff → measured cost → what you'd change with more time." },
-    { q: "How would you debug a hot-path regression in a collaborative editor?", type: "technical", category: "cs_fundamentals", difficulty: "hard", answer_guidance: "Mention flamegraphs, isolating the renderer, and reproducing under sustained load.", ideal_answer_outline: "Reproduce → bisect → measure → fix → guardrail test." },
-    { q: "Describe a time you chose to ship less to ship faster.", type: "behavioral", category: "behavioral", difficulty: "easy", answer_guidance: "Use STAR. Be specific about what you cut and the second-order effect.", ideal_answer_outline: "Situation → cut → why → second-order outcome." },
-    { q: "Design a server-side rate limiter for a public API.", type: "technical", category: "coding", difficulty: "hard", answer_guidance: "Talk through token bucket vs sliding window, and how you'd shard state.", ideal_answer_outline: "Requirements → algorithm choice → state sharding → failure mode." },
-  ],
-  weak_spots: [
-    "Distributed systems vocabulary",
-    "Behavioral storytelling — STAR structure",
-    "Live-coding with someone watching",
-  ],
-  created_at: today,
-};
-
 export const notifications: Notification[] = [
   { id: "n_1", type: "match", content: "New 94% match — Linear, Editor team", read: false, created_at: "2026-06-15T13:00:00Z" },
   { id: "n_2", type: "ghost", content: "We filtered 4 likely-ghost roles for you today", read: false, created_at: "2026-06-15T09:00:00Z" },
   { id: "n_3", type: "referral", content: "Priya Raman accepted your intro request", read: true, created_at: "2026-06-14T17:00:00Z" },
-  { id: "n_4", type: "interview", content: "Mock interview ready: Anthropic Inference loop", read: true, created_at: "2026-06-13T20:00:00Z" },
 ];
 
 // ============= Research data =============

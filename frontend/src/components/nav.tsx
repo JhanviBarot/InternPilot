@@ -10,7 +10,6 @@ const links = [
   { to: "/dashboard", label: "Dashboard" },
   { to: "/referrals", label: "Referrals" },
   { to: "/outreach", label: "Outreach" },
-  { to: "/prep", label: "Interview" },
 ];
 
 function getInitials(name: string): string {
@@ -172,7 +171,6 @@ export function Footer() {
             <li><Link to="/onboarding" className="hover:text-foreground">Build your Career Twin</Link></li>
             <li><Link to="/auth" className="hover:text-foreground">Sign in</Link></li>
             <li><Link to="/referrals" className="hover:text-foreground">Referrals</Link></li>
-            <li><Link to="/prep" className="hover:text-foreground">Interview prep</Link></li>
           </ul>
         </div>
       </div>

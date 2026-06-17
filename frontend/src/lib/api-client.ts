@@ -6,10 +6,10 @@
 
 import {
   user, profile, postings, matches, applications, referrals, contacts,
-  dashboardSummary, interviewPrep, notifications,
+  dashboardSummary, notifications,
   researchOpportunities, researchOutreach,
   type User, type Profile, type Posting, type Match, type Application,
-  type Referral, type Contact, type DashboardSummary, type InterviewPrep, type InterviewQuestion,
+  type Referral, type Contact, type DashboardSummary,
   type Notification, type Artifact, type ApplicationStatus,
   type ResearchOpportunity, type ResearchOutreach, type ResearchOutreachStatus,
   type ResearchPitch,
@@ -416,30 +416,6 @@ function mapResearchOpportunity(raw: any): ResearchOpportunity {
   };
 }
 
-// Backend POST /interview-prep → { prep: InterviewPrepSchema }
-function mapInterviewPrep(raw: any): InterviewPrep {
-  return {
-    id: String(raw.id ?? ""),
-    application_id: String(raw.application_id ?? ""),
-    company_name: raw.company_name ?? "",
-    role: raw.role ?? "",
-    opportunity_type: (raw.opportunity_type === "research" ? "research" : "company") as "company" | "research",
-    region: raw.region ?? null,
-    company_type: (raw.company_type as InterviewPrep["company_type"]) ?? "unknown",
-    questions: (raw.questions ?? []).map((q: any): InterviewQuestion => ({
-      q: q.q ?? q.question ?? String(q),
-      type: q.type ?? "technical",
-      category: q.category ?? "cs_fundamentals",
-      difficulty: q.difficulty ?? "medium",
-      answer_guidance: q.answer_guidance ?? "",
-      ideal_answer_outline: q.ideal_answer_outline ?? "",
-    })),
-    weak_spots: raw.weak_spots ?? [],
-    reverse_questions: raw.reverse_questions ?? [],
-    created_at: raw.created_at ?? new Date().toISOString(),
-  };
-}
-
 // Backend POST /research/pitch → ArtifactSchema (not ResearchPitch)
 // Frontend ResearchPitch = { id, opportunity_id, subject, body, generated_at }
 // We adapt ArtifactSchema.content (which should contain email body) → ResearchPitch
@@ -632,29 +608,6 @@ export const api = {
     return _referrals.find((r) => r.id === id);
   },
 
-  // ---------- Interview prep ----------
-  async getInterviewPrep(id: string): Promise<InterviewPrep | undefined> {
-    if (!shouldUseMocks()) {
-      const raw = await http<any>(`/interview-prep/${id}`);
-      return mapInterviewPrep(raw?.prep ?? raw);
-    }
-    await delay();
-    return interviewPrep.id === id ? interviewPrep : undefined;
-  },
-  async createInterviewPrep(company_name: string, role: string): Promise<InterviewPrep> {
-    if (!shouldUseMocks()) {
-      const raw = await http<any>("/interview-prep", {
-        method: "POST",
-        body: JSON.stringify({ company_name, role }),
-      });
-      return mapInterviewPrep(raw?.prep ?? raw);
-    }
-    await delay(500);
-    return { ...interviewPrep, company_name, role, id: `ip_${Date.now()}` };
-  },
-  async getDefaultInterviewPrep(): Promise<InterviewPrep> {
-    await delay(); return interviewPrep;
-  },
   async updatePreferences(prefs: Partial<Profile["preferences"]>): Promise<Profile> {
     if (!shouldUseMocks()) {
       const raw = await http<any>("/profile/preferences", {

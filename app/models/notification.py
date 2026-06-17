@@ -9,7 +9,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 from app.models.base import Base, TimestampMixin
 
 NOTIFICATION_TYPES = frozenset(
-    {"followup_due", "status_change", "new_match", "response", "prep_ready"}
+    {"followup_due", "status_change", "new_match", "response"}
 )
 
 

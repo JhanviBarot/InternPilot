@@ -11,7 +11,6 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as TrackerRouteImport } from './routes/tracker'
 import { Route as ReferralsRouteImport } from './routes/referrals'
-import { Route as PrepRouteImport } from './routes/prep'
 import { Route as PitchRouteImport } from './routes/pitch'
 import { Route as OutreachRouteImport } from './routes/outreach'
 import { Route as OnboardingRouteImport } from './routes/onboarding'
@@ -29,11 +28,6 @@ const TrackerRoute = TrackerRouteImport.update({
 const ReferralsRoute = ReferralsRouteImport.update({
   id: '/referrals',
   path: '/referrals',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const PrepRoute = PrepRouteImport.update({
-  id: '/prep',
-  path: '/prep',
   getParentRoute: () => rootRouteImport,
 } as any)
 const PitchRoute = PitchRouteImport.update({
@@ -86,7 +80,6 @@ export interface FileRoutesByFullPath {
   '/onboarding': typeof OnboardingRoute
   '/outreach': typeof OutreachRoute
   '/pitch': typeof PitchRoute
-  '/prep': typeof PrepRoute
   '/referrals': typeof ReferralsRoute
   '/tracker': typeof TrackerRoute
 }
@@ -99,7 +92,6 @@ export interface FileRoutesByTo {
   '/onboarding': typeof OnboardingRoute
   '/outreach': typeof OutreachRoute
   '/pitch': typeof PitchRoute
-  '/prep': typeof PrepRoute
   '/referrals': typeof ReferralsRoute
   '/tracker': typeof TrackerRoute
 }
@@ -113,7 +105,6 @@ export interface FileRoutesById {
   '/onboarding': typeof OnboardingRoute
   '/outreach': typeof OutreachRoute
   '/pitch': typeof PitchRoute
-  '/prep': typeof PrepRoute
   '/referrals': typeof ReferralsRoute
   '/tracker': typeof TrackerRoute
 }
@@ -128,7 +119,6 @@ export interface FileRouteTypes {
     | '/onboarding'
     | '/outreach'
     | '/pitch'
-    | '/prep'
     | '/referrals'
     | '/tracker'
   fileRoutesByTo: FileRoutesByTo
@@ -141,7 +131,6 @@ export interface FileRouteTypes {
     | '/onboarding'
     | '/outreach'
     | '/pitch'
-    | '/prep'
     | '/referrals'
     | '/tracker'
   id:
@@ -154,7 +143,6 @@ export interface FileRouteTypes {
     | '/onboarding'
     | '/outreach'
     | '/pitch'
-    | '/prep'
     | '/referrals'
     | '/tracker'
   fileRoutesById: FileRoutesById
@@ -168,7 +156,6 @@ export interface RootRouteChildren {
   OnboardingRoute: typeof OnboardingRoute
   OutreachRoute: typeof OutreachRoute
   PitchRoute: typeof PitchRoute
-  PrepRoute: typeof PrepRoute
   ReferralsRoute: typeof ReferralsRoute
   TrackerRoute: typeof TrackerRoute
 }
@@ -187,13 +174,6 @@ declare module '@tanstack/react-router' {
       path: '/referrals'
       fullPath: '/referrals'
       preLoaderRoute: typeof ReferralsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/prep': {
-      id: '/prep'
-      path: '/prep'
-      fullPath: '/prep'
-      preLoaderRoute: typeof PrepRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/pitch': {
@@ -264,7 +244,6 @@ const rootRouteChildren: RootRouteChildren = {
   OnboardingRoute: OnboardingRoute,
   OutreachRoute: OutreachRoute,
   PitchRoute: PitchRoute,
-  PrepRoute: PrepRoute,
   ReferralsRoute: ReferralsRoute,
   TrackerRoute: TrackerRoute,
 }

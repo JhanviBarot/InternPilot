@@ -308,10 +308,6 @@ Format: `METHOD /path` — *auth* — **request** → **response**.
 - 🟦 `POST /api/applications/:id/outcome` — auth — `{ outcome_type, responded, time_to_response_hours? }` → `201 { outcome: Outcome }` *(manual log)*
 - ⚙️ `POST /api/integrations/gmail/sync` — worker — `{}` → `200 { detected: number }` *(reply detection → auto-creates outcomes)*
 
-### Module 9 — Interview-Prep Handoff
-- 🟦 `POST /api/interview-prep` — auth — `{ application_id?, company_name, role, opportunity_type?, region? }` → `201 { prep: InterviewPrep }` *(adaptive: company vs research, region-aware round structure)*
-- 🟦 `GET  /api/interview-prep/:id` — auth — → `200 { prep: InterviewPrep }`
-
 ### Module 10 — Evaluation System / Platform IQ
 - 🟦 `GET  /api/evaluation/metrics` — auth — → `200 { latest: Evaluation | null, iq_trend: { date: string, value: number }[] }`
   - `latest`: most recent `evaluate_now` snapshot (formula_v1 or insufficient_data model_version).
@@ -381,7 +377,7 @@ interface DigestResponse {
 
 **Notification:**
 ```ts
-type NotificationType = "followup_due" | "status_change" | "new_match" | "response" | "prep_ready";
+type NotificationType = "followup_due" | "status_change" | "new_match" | "response";
 
 interface Notification {
   id: string;
