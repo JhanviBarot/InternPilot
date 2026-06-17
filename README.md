@@ -2,7 +2,7 @@
 
 **Stop applying into the void.**
 
-> **Mid-Evaluation Technical Report:** [docs/MID_EVALUATION.md](docs/MID_EVALUATION.md) — full architecture, module breakdown, engineering decisions, real metrics, and reproducibility instructions.
+> **Mid-Evaluation Technical Report:** [DOCUMENTATION.md](DOCUMENTATION.md) — full architecture, module breakdown, engineering decisions, real metrics, and reproducibility instructions.
 
 [![Tests](https://img.shields.io/badge/tests-276%2F276%20passing-22c55e?style=flat-square)](#running-the-test-suite)
 [![mypy](https://img.shields.io/badge/mypy-strict-3178c6?style=flat-square)](https://mypy.readthedocs.io/)
