@@ -1,85 +1,68 @@
-"""One-shot smoke test: research prep path against the live LLM.
+"""Smoke test: LLM router + embedding pipeline (no DB required).
+
+Tests:
+  1. LLM fallback router — generates a cold-email research pitch via complete()
+  2. Local embeddings — encodes two texts and checks cosine similarity
 
 Run:  uv run python scripts/smoke_research_prep.py
 """
 from __future__ import annotations
 
 import asyncio
-import json
+import math
 
-from app.llm.extract import extract_structured
-from app.schemas.interview_prep import PrepExtract
 
-PROFILE_TEXT = """\
-Skills: Python, PyTorch, Hugging Face Transformers, scikit-learn, SQL
-Research interests: natural language processing, low-resource machine translation, multilingual models
-Project 'LowResourceMT': Fine-tuned mBART-50 for Hindi→Marathi translation with back-translation \
-augmentation | Tech: Python, PyTorch, Hugging Face
-Project 'SentimentBERT': Adapter-tuned BERT for aspect-level sentiment on product reviews | \
-Tech: Python, Transformers, HuggingFace
-Experience: NLP Research Intern @ IIIT Hyderabad — implemented subword tokenisation experiments \
-for low-resource Dravidian languages"""
+async def smoke_llm() -> None:
+    from app.llm.router import complete
 
-INSTRUCTIONS = """\
-Generate interview prep for a RESEARCH POSITION at MIT NLP Group (Prof. Regina Barzilay's lab), \
-role: Research Intern.
-Research area / topic: low-resource NLP, multilingual machine translation
+    messages = [
+        {"role": "system", "content": "You are an assistant helping CS students write cold emails to research professors. Be concise."},
+        {"role": "user", "content": (
+            "Write a 3-sentence cold email from a 3rd-year CS student interested in NLP research "
+            "to Prof. Tanvir Ahmed at IIT Delhi's Language Technology Lab. "
+            "The student has experience with PyTorch and transformer fine-tuning."
+        )},
+    ]
+    print("=== LLM Router Smoke Test ===")
+    print("Calling LLM (Gemini → Groq → OpenRouter fallback chain)…")
+    text = await complete(messages)
+    print(f"  Response ({len(text)} chars):\n")
+    print("  " + text.replace("\n", "\n  "))
+    print()
 
-STRUCTURE — include these categories (no coding, no GD):
-  research_fit (2–3 questions): Why this lab/professor; how the student's interests align; \
-evidence of engagement with the research area.
-  domain_depth (3–4 questions): Core technical concepts, seminal papers, open problems \
-in low-resource NLP and multilingual MT.
-  methods (2–3 questions): Techniques, tools, experimental or theoretical approaches \
-relevant to the area (mBART, back-translation, adapter tuning, etc.).
-  project (2–3 questions): The student's REAL projects/papers as evidence of research \
-aptitude. ONLY reference these real projects: 'LowResourceMT', 'SentimentBERT'.
-  behavioral (1–2 questions): Motivation, independence, long-term research goals. STAR format.
 
-SKILL WHITELIST (only reference skills/tech from this list): \
-Hugging Face, Hugging Face Transformers, PyTorch, Python, SQL, Transformers, scikit-learn
+async def smoke_embeddings() -> None:
+    from app.llm.embeddings import embed, EMBEDDING_DIM
 
-OUTPUT RULES:
-  - Total 10–14 questions.
-  - Each question: q, type ('technical'/'behavioral'), category, difficulty, \
-answer_guidance, ideal_answer_outline.
-  - weak_spots: 3–5 real gaps between student background and research area requirements.
-  - reverse_questions: exactly 2 smart questions the student can ask the professor/PI.
-  - NEVER invent skills, projects, or research interests not in the profile."""
+    texts = [
+        "Machine learning intern with PyTorch and transformer experience in NLP",
+        "Natural language processing researcher specializing in multilingual models",
+    ]
+    print("=== Embedding Pipeline Smoke Test ===")
+    print(f"  Model: all-MiniLM-L6-v2  |  dim: {EMBEDDING_DIM}")
+    print("  Encoding 2 texts…")
+    vectors = await embed(texts)
+    assert len(vectors) == 2
+    assert len(vectors[0]) == EMBEDDING_DIM
+
+    # cosine similarity
+    v1, v2 = vectors[0], vectors[1]
+    dot = sum(a * b for a, b in zip(v1, v2))
+    mag1 = math.sqrt(sum(a * a for a in v1))
+    mag2 = math.sqrt(sum(b * b for b in v2))
+    cosine = dot / (mag1 * mag2)
+
+    print(f"  Text A: {texts[0][:60]}")
+    print(f"  Text B: {texts[1][:60]}")
+    print(f"  Cosine similarity: {cosine:.4f}  (>0.70 expected for semantically related texts)")
+    assert cosine > 0.50, f"Similarity too low: {cosine}"
+    print("  PASS\n")
 
 
 async def main() -> None:
-    print("Calling LLM (research prep path)...\n")
-    result: PrepExtract = await extract_structured(
-        text=PROFILE_TEXT,
-        schema=PrepExtract,
-        instructions=INSTRUCTIONS,
-    )
-
-    print(f"=== {len(result.questions)} questions ===\n")
-    by_cat: dict[str, list] = {}
-    for q in result.questions:
-        by_cat.setdefault(q.category or "other", []).append(q)
-
-    for cat, qs in by_cat.items():
-        print(f"--- {cat.upper()} ---")
-        for q in qs:
-            print(f"  [{q.difficulty}] {q.q}")
-            if q.answer_guidance:
-                print(f"    guidance: {q.answer_guidance}")
-        print()
-
-    print("=== WEAK SPOTS ===")
-    for ws in result.weak_spots:
-        print(f"  • {ws}")
-
-    print("\n=== REVERSE QUESTIONS ===")
-    for rq in result.reverse_questions:
-        print(f"  • {rq}")
-
-    print("\n--- raw JSON (truncated) ---")
-    raw = json.dumps(result.model_dump(), indent=2)
-    print(raw[:3000] + (" …" if len(raw) > 3000 else ""))
+    await smoke_embeddings()
+    await smoke_llm()
+    print("=== All smoke tests passed ===")
 
 
 if __name__ == "__main__":

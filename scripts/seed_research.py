@@ -31,7 +31,6 @@ import app.models.artifact  # noqa: E402, F401
 import app.models.company  # noqa: E402, F401
 import app.models.contact  # noqa: E402, F401
 import app.models.evaluation  # noqa: E402, F401
-import app.models.interview_prep  # noqa: E402, F401
 import app.models.notification  # noqa: E402, F401
 import app.models.outcome  # noqa: E402, F401
 import app.models.posting  # noqa: E402, F401
