@@ -27,9 +27,7 @@ from app.models.base import Base
 from app.models.company import Company  # noqa: F401 — register model with Base.metadata
 from app.models.contact import Contact  # noqa: F401 — register model with Base.metadata
 from app.models.evaluation import Evaluation  # noqa: F401 — register model with Base.metadata
-from app.models.interview_prep import (
-    InterviewPrep,  # noqa: F401 — register model with Base.metadata
-)
+
 from app.models.notification import Notification  # noqa: F401 — register model with Base.metadata
 from app.models.outcome import Outcome  # noqa: F401 — register model with Base.metadata
 from app.models.posting import Posting  # noqa: F401 — register model with Base.metadata
@@ -45,7 +43,7 @@ from app.models.user import User  # noqa: F401 — register model with Base.meta
 
 TEST_DATABASE_URL = os.environ.get(
     "TEST_DATABASE_URL",
-    "postgresql+asyncpg://postgres:postgres@localhost:5432/internpilot_test",
+    "postgresql+asyncpg://postgres:testpass@localhost:5433/internpilot_test",
 )
 
 
