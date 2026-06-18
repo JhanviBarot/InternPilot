@@ -4,6 +4,7 @@ from __future__ import annotations
 import uuid
 
 from fastapi import APIRouter, Depends, Query
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
@@ -11,6 +12,7 @@ from app.core.errors import APIError
 from app.core.security import get_current_user
 from app.models.user import User
 from app.schemas.application import (
+    ArtifactSchema,
     AtsScoreRequest,
     AtsScoreResponse,
     CreateApplicationRequest,
@@ -28,6 +30,7 @@ from app.schemas.application import (
     UpdateApplicationRequest,
     UpdateArtifactRequest,
     UpdateArtifactResponse,
+    coerce_artifact_schema,
     coerce_outcome_schema,
 )
 from app.services.application_service import ApplicationService
@@ -179,8 +182,8 @@ async def draft_followup(
     db: AsyncSession = Depends(get_db),
 ) -> DraftFollowupResponse:
     svc = TrackerService(db, current_user.id)
-    draft = await svc.draft_followup(application_id)
-    return DraftFollowupResponse(draft=draft)
+    artifact = await svc.draft_followup(application_id)
+    return DraftFollowupResponse(artifact=artifact)
 
 
 @router.post(
@@ -206,8 +209,29 @@ async def record_outcome(
 
 
 # ---------------------------------------------------------------------------
-# Artifact editing
+# Artifact read + editing
 # ---------------------------------------------------------------------------
+
+
+@router.get("/artifacts/{artifact_id}", response_model=ArtifactSchema)
+async def get_artifact(
+    artifact_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> ArtifactSchema:
+    from app.models.artifact import Artifact
+
+    artifact = (
+        await db.execute(
+            select(Artifact).where(
+                Artifact.id == artifact_id,
+                Artifact.user_id == current_user.id,
+            )
+        )
+    ).scalar_one_or_none()
+    if artifact is None:
+        raise APIError(404, "ARTIFACT_NOT_FOUND", "Artifact not found")
+    return coerce_artifact_schema(artifact)
 
 
 @router.put("/artifacts/{artifact_id}", response_model=UpdateArtifactResponse)

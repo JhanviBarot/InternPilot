@@ -13,7 +13,7 @@ import math
 
 
 async def smoke_embeddings() -> None:
-    from app.llm.embeddings import embed, EMBEDDING_DIM
+    from app.llm.embeddings import EMBEDDING_DIM, embed
 
     texts = [
         "Machine learning intern PyTorch transformer fine-tuning NLP low-resource",
@@ -25,7 +25,7 @@ async def smoke_embeddings() -> None:
     assert len(vectors) == 2 and len(vectors[0]) == EMBEDDING_DIM
 
     v1, v2 = vectors[0], vectors[1]
-    dot = sum(a * b for a, b in zip(v1, v2))
+    dot = sum(a * b for a, b in zip(v1, v2, strict=False))
     mag = lambda v: math.sqrt(sum(x * x for x in v))  # noqa: E731
     cosine = dot / (mag(v1) * mag(v2))
 

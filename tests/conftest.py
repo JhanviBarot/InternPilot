@@ -27,7 +27,6 @@ from app.models.base import Base
 from app.models.company import Company  # noqa: F401 — register model with Base.metadata
 from app.models.contact import Contact  # noqa: F401 — register model with Base.metadata
 from app.models.evaluation import Evaluation  # noqa: F401 — register model with Base.metadata
-
 from app.models.notification import Notification  # noqa: F401 — register model with Base.metadata
 from app.models.outcome import Outcome  # noqa: F401 — register model with Base.metadata
 from app.models.posting import Posting  # noqa: F401 — register model with Base.metadata

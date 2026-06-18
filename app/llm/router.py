@@ -77,7 +77,7 @@ async def _try_gemini(messages: list[Message], **opts: Any) -> str:
     response = await asyncio.wait_for(
         client.aio.models.generate_content(
             model="gemini-2.5-flash",
-            contents=contents,
+            contents=contents,  # type: ignore[arg-type]
             config=config,
         ),
         timeout=PROVIDER_TIMEOUT,

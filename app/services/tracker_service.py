@@ -16,10 +16,16 @@ from sqlalchemy.orm import selectinload
 
 from app.core.errors import APIError
 from app.models.application import Application
+from app.models.artifact import Artifact
 from app.models.company import Company
 from app.models.outcome import Outcome
 from app.models.posting import Posting
-from app.schemas.application import ApplicationSchema, coerce_application_schema
+from app.schemas.application import (
+    ApplicationSchema,
+    ArtifactSchema,
+    coerce_application_schema,
+    coerce_artifact_schema,
+)
 from app.services.base import BaseService
 from app.services.cohort_service import CohortService
 
@@ -188,7 +194,7 @@ class TrackerService(BaseService):
     # draft_followup — LLM follow-up message generation
     # ------------------------------------------------------------------
 
-    async def draft_followup(self, application_id: uuid.UUID) -> str:
+    async def draft_followup(self, application_id: uuid.UUID) -> ArtifactSchema:
         from app.llm.router import complete
 
         app = await self._get_application_owned(application_id)
@@ -220,10 +226,25 @@ class TrackerService(BaseService):
             "Reference the specific role and company. Keep it under 150 words."
         )
 
-        return await complete([
+        content = await complete([
             {"role": "system", "content": system_msg},
             {"role": "user", "content": user_msg},
         ])
+        artifact = Artifact(
+            user_id=self.user_id,
+            application_id=application_id,
+            type="followup",
+            content=content,
+            ats_score=None,
+            missing_keywords=[],
+            grounding_score=None,
+            predicted_response=None,
+            version=1,
+        )
+        self.db.add(artifact)
+        await self.db.commit()
+        await self.db.refresh(artifact)
+        return coerce_artifact_schema(artifact)
 
     # ------------------------------------------------------------------
     # record_outcome — create Outcome + trigger cohort recompute

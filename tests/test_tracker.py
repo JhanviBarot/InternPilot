@@ -571,8 +571,10 @@ async def test_draft_followup_returns_text(
 
     assert resp.status_code == 200
     body = resp.json()
-    assert "draft" in body
-    assert len(body["draft"]) > 0
+    assert "artifact" in body
+    artifact = body["artifact"]
+    assert artifact["type"] == "followup"
+    assert len(artifact["content"]) > 0
 
 
 # ---------------------------------------------------------------------------

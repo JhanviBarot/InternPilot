@@ -213,7 +213,7 @@ class RecordOutcomeResponse(BaseModel):
 
 
 class DraftFollowupResponse(BaseModel):
-    draft: str
+    artifact: ArtifactSchema
 
 
 class GmailSyncResponse(BaseModel):

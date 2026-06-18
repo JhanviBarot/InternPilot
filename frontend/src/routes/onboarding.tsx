@@ -204,7 +204,7 @@ function OnboardingInner({ initialProfile }: { initialProfile: Profile }) {
     gateAction(async () => {
       setGithubConnecting(true); setGithubError(null);
       try {
-        const updated = await api.updateProfile({ github_url: url } as any);
+        const updated = await api.importGithub(url);
         setProfile(updated);
         if (updated.skills.length > 0) setSkills(updated.skills);
         setGithubDone(true);

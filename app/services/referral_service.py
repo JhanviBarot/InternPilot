@@ -240,12 +240,17 @@ class ReferralService(BaseService):
         contact: Contact = row[0]
         company: Company = row[1]
 
+        if contact.company_id != company_id:
+            raise APIError(400, "COMPANY_MISMATCH", "Contact does not belong to the specified company")
+
         # Load posting if provided
         posting: Posting | None = None
         if posting_id is not None:
             posting = await self.db.get(Posting, posting_id)
             if posting is None:
                 raise APIError(404, "POSTING_NOT_FOUND", "Posting not found")
+            if posting.company_id != company_id:
+                raise APIError(400, "COMPANY_MISMATCH", "Posting does not belong to the specified company")
 
         # Load profile for grounding
         profile = await self._get_profile()

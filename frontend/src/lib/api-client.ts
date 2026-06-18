@@ -18,7 +18,7 @@ import {
 export type { User } from "./mocks";
 
 export const API_BASE_URL = (import.meta as any).env?.VITE_API_BASE_URL ?? "/api";
-const USE_MOCKS = ((import.meta as any).env?.VITE_USE_MOCKS ?? "true") !== "false";
+const USE_MOCKS = ((import.meta as any).env?.VITE_USE_MOCKS ?? "false") !== "false";
 
 // ---------------------------------------------------------------------------
 // Guest mode — browse-only with mock data; cleared on real login/signup
@@ -490,6 +490,15 @@ export const api = {
     }
     await delay(); return { ...profile, ...updates };
   },
+  async importGithub(github_url: string): Promise<Profile> {
+    if (!shouldUseMocks()) {
+      const raw = await http<any>("/profile/github", {
+        method: "POST", body: JSON.stringify({ github_url }),
+      });
+      return mapProfile(raw.profile ?? raw);
+    }
+    await delay(); return { ...profile, github_url };
+  },
   async getStrength(): Promise<{ profile_strength: number; gaps: string[] }> {
     if (!shouldUseMocks()) return http("/profile/strength");
     await delay(); return { profile_strength: profile.profile_strength, gaps: profile.gaps };
@@ -514,9 +523,10 @@ export const api = {
   },
 
   // ---------- Matches ----------
-  async getMatches(): Promise<Match[]> {
+  async getMatches(includeGhosts = false): Promise<Match[]> {
     if (!shouldUseMocks()) {
-      const raw = await http<any>("/matches");
+      const url = includeGhosts ? "/matches?include_ghosts=true" : "/matches";
+      const raw = await http<any>(url);
       const items: any[] = raw?.data ?? (Array.isArray(raw) ? raw : []);
       return items.map(mapMatch);
     }

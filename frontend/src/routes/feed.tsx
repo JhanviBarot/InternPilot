@@ -66,7 +66,7 @@ function CompanyFeed() {
   const [sort, setSort] = useState<SortKey>("ev");
   const [hideGhosts, setHideGhosts] = useState(true);
   const [selectedModes, setSelectedModes] = useState<string[]>([]);
-  const { data, loading, error, reload } = useApi(() => api.getMatches(), []);
+  const { data, loading, error, reload } = useApi(() => api.getMatches(!hideGhosts), [hideGhosts]);
 
   const toggleMode = (m: string) =>
     setSelectedModes((prev) => prev.includes(m) ? prev.filter((x) => x !== m) : [...prev, m]);

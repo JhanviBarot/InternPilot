@@ -404,6 +404,13 @@ class ResearchService(BaseService):
     ) -> ResearchOutreach:
         await self._get_opportunity(opportunity_id)  # 404 guard
 
+        if pitch_artifact_id is not None:
+            artifact = await self.db.get(Artifact, pitch_artifact_id)
+            if artifact is None or artifact.user_id != self.user_id:
+                raise APIError(403, "FORBIDDEN", "Artifact not found or not owned by you")
+            if artifact.type != "research_pitch":
+                raise APIError(400, "INVALID_ARTIFACT_TYPE", "Artifact must be of type 'research_pitch'")
+
         status = "drafted" if pitch_artifact_id is not None else "suggested"
         outreach = ResearchOutreach(
             user_id=self.user_id,
