@@ -52,28 +52,34 @@ async def _try_gemini(messages: list[Message], **opts: Any) -> str:
     if not settings.GEMINI_API_KEY:
         raise _ProviderSkippedError("GEMINI_API_KEY not set")
 
-    import google.generativeai as genai
+    from google import genai
+    from google.genai import types
 
-    genai.configure(api_key=settings.GEMINI_API_KEY)  # type: ignore[attr-defined]
+    client = genai.Client(api_key=settings.GEMINI_API_KEY)
 
     system_parts = [m["content"] for m in messages if m["role"] == "system"]
     chat_msgs = [m for m in messages if m["role"] != "system"]
 
-    model_kwargs: dict[str, Any] = {}
-    if system_parts:
-        model_kwargs["system_instruction"] = "\n".join(system_parts)
-
-    model = genai.GenerativeModel("gemini-2.5-flash", **model_kwargs)  # type: ignore[attr-defined]
-
     contents = [
-        {"role": "model" if m["role"] == "assistant" else "user", "parts": [{"text": m["content"]}]}
+        types.Content(
+            role="model" if m["role"] == "assistant" else "user",
+            parts=[types.Part(text=m["content"])],
+        )
         for m in chat_msgs
     ]
     if not contents:
-        contents = [{"role": "user", "parts": [{"text": ""}]}]
+        contents = [types.Content(role="user", parts=[types.Part(text="")])]
+
+    config = types.GenerateContentConfig(
+        system_instruction="\n".join(system_parts) if system_parts else None,
+    )
 
     response = await asyncio.wait_for(
-        model.generate_content_async(contents),
+        client.aio.models.generate_content(
+            model="gemini-2.5-flash",
+            contents=contents,
+            config=config,
+        ),
         timeout=PROVIDER_TIMEOUT,
     )
     return str(response.text)
