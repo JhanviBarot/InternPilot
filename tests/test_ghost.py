@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from httpx import AsyncClient
 from sqlalchemy import select as sa_select
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.models.company import Company
 from app.models.posting import Posting
@@ -385,51 +385,55 @@ async def test_aggregation_refresh_calls_ghost_rescore(db: AsyncSession) -> None
 
 
 @pytest.mark.asyncio
-async def test_cross_source_dedup_increments_sightings(db: AsyncSession) -> None:
+async def test_cross_source_dedup_increments_sightings(test_engine) -> None:
     """When aggregation finds the same role on a second board, source_sightings += 1."""
     from app.sources.base import RawPosting
     from app.sources.normalize import build_dedup_key
 
-    # Seed a company and an existing posting via AggregationService internals
-    svc = AggregationService(db)
+    # Use a fresh session so _upsert_one's internal commit() calls don't race
+    # with the db-fixture teardown TRUNCATE on the shared connection pool.
+    factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
     company_name = f"TestCo-{uuid.uuid4().hex[:6]}"
 
-    raw1: RawPosting = {
-        "title": "Software Intern",
-        "company_name": company_name,
-        "description": "Build cool things.",
-        "location": None,
-        "work_mode": None,
-        "stipend": None,
-        "source": "greenhouse",
-        "source_url": f"https://boards.greenhouse.io/{uuid.uuid4().hex}",
-        "posted_at": None,
-        "requirements": [],
-    }
-    was_dedup = await svc._upsert_one(raw1)
-    assert not was_dedup  # first insert
+    async with factory() as session:
+        svc = AggregationService(session)
 
-    # Second raw: different source_url but same normalized title+company → same dedup_key
-    dedup = build_dedup_key(company_name, "Software Intern", None)
-    raw2: RawPosting = {
-        "title": "Software Intern",
-        "company_name": company_name,
-        "description": "Build cool things.",
-        "location": None,
-        "work_mode": None,
-        "stipend": None,
-        "source": "lever",
-        "source_url": f"https://jobs.lever.co/{uuid.uuid4().hex}",
-        "posted_at": None,
-        "requirements": [],
-    }
-    was_dedup2 = await svc._upsert_one(raw2)
-    assert was_dedup2  # cross-source duplicate
+        raw1: RawPosting = {
+            "title": "Software Intern",
+            "company_name": company_name,
+            "description": "Build cool things.",
+            "location": None,
+            "work_mode": None,
+            "stipend": None,
+            "source": "greenhouse",
+            "source_url": f"https://boards.greenhouse.io/{uuid.uuid4().hex}",
+            "posted_at": None,
+            "requirements": [],
+        }
+        was_dedup = await svc._upsert_one(raw1)
+        assert not was_dedup  # first insert
 
-    # source_sightings on the original posting must now be 2
-    existing = (
-        await db.execute(
-            sa_select(Posting).where(Posting.dedup_key == dedup)
-        )
-    ).scalar_one()
-    assert existing.source_sightings == 2
+        # Second raw: different source_url but same normalized title+company → same dedup_key
+        dedup = build_dedup_key(company_name, "Software Intern", None)
+        raw2: RawPosting = {
+            "title": "Software Intern",
+            "company_name": company_name,
+            "description": "Build cool things.",
+            "location": None,
+            "work_mode": None,
+            "stipend": None,
+            "source": "lever",
+            "source_url": f"https://jobs.lever.co/{uuid.uuid4().hex}",
+            "posted_at": None,
+            "requirements": [],
+        }
+        was_dedup2 = await svc._upsert_one(raw2)
+        assert was_dedup2  # cross-source duplicate
+
+        # source_sightings on the original posting must now be 2
+        existing = (
+            await session.execute(
+                sa_select(Posting).where(Posting.dedup_key == dedup)
+            )
+        ).scalar_one()
+        assert existing.source_sightings == 2
