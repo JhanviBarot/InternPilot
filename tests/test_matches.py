@@ -248,17 +248,23 @@ async def test_matches_no_profile_returns_empty(
 
 
 @pytest.mark.asyncio
-async def test_matches_no_embedding_returns_empty(
+async def test_matches_no_embedding_returns_unranked(
     client: AsyncClient,
     user_no_embedding: tuple[User, dict[str, str]],
     seeded: dict[str, Any],
 ) -> None:
+    """Without a profile embedding, the feed falls back to unranked postings
+    (match_score=0, expected_value=0, explanation prompts profile completion)."""
     _, headers = user_no_embedding
     r = await client.get(MATCHES_URL, headers=headers)
     assert r.status_code == 200
     body = r.json()
-    assert body["data"] == []
-    assert body["total"] == 0
+    # Unranked postings are returned — total reflects how many active postings exist
+    assert body["total"] >= 0
+    for m in body["data"]:
+        assert m["match_score"] == 0.0
+        assert m["expected_value"] == 0.0
+        assert "Complete your profile" in m["match_explanation"]
 
 
 # ---------------------------------------------------------------------------

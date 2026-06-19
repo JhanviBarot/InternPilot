@@ -38,16 +38,25 @@ function Assistant() {
 
 function AssistantInner({ m }: { m: Match }) {
   const [nonce, setNonce] = useState(0);
+
+  // Decode posting: LLM-extracted summary + canonical requirements + resume keywords
+  const { data: decoded } = useApi(
+    () => api.decodePosting(m.posting.id),
+    [m.posting.id],
+  );
+
+  // Draft cover letter + ATS score (re-fetched on regenerate)
   const { data: draft, loading: draftLoading } = useApi(
     () => api.draftCoverLetter(m.posting.id),
     [m.posting.id, nonce],
   );
 
-  // Use backend ATS score when available; fall back to match-derived estimate
   const atsScore = draft?.ats_score ? draft.ats_score : Math.round(70 + m.match_score * 25);
   const missing = draft?.missing_keywords?.length
     ? draft.missing_keywords
     : (m.missing_skills.length ? m.missing_skills : ["Yjs", "OT operations"]);
+  const summary = decoded?.summary || m.posting.description;
+  const requirements = decoded?.requirements?.length ? decoded.requirements : m.posting.requirements;
 
   return (
     <div className="grid gap-8 md:grid-cols-[420px_1fr]">
@@ -75,10 +84,10 @@ function AssistantInner({ m }: { m: Match }) {
 
         <div className="card-soft p-6">
           <div className="text-xs uppercase tracking-[0.14em] text-muted-foreground">Job summary</div>
-          <p className="mt-2 text-sm leading-relaxed">{m.posting.description}</p>
+          <p className="mt-2 text-sm leading-relaxed">{summary}</p>
           <div className="mt-4 text-xs uppercase tracking-[0.14em] text-muted-foreground">Requirements</div>
           <ul className="mt-2 text-sm space-y-1.5">
-            {m.posting.requirements.map((r) => (
+            {requirements.map((r) => (
               <li key={r} className="flex gap-2"><Check className="h-3.5 w-3.5 mt-1 shrink-0" style={{ color: "var(--color-primary)" }} />{r}</li>
             ))}
           </ul>

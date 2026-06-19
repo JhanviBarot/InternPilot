@@ -46,8 +46,34 @@ structlog.configure(
 # Lifespan: init / dispose the DB engine
 # ---------------------------------------------------------------------------
 
+logger = logging.getLogger(__name__)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
+    # Warm up the embedding model so the first profile save is not slow.
+    try:
+        from app.llm.embeddings import embed
+        await embed(["warmup"])
+        logger.info("embedding model ready")
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("embedding model warmup failed: %s", exc)
+
+    # Warn early when no LLM provider is configured — generation features will fail.
+    has_llm = any([
+        settings.GEMINI_API_KEY,
+        settings.GROQ_API_KEY,
+        settings.OPENROUTER_API_KEY,
+        settings.DEEPSEEK_API_KEY,
+        settings.OLLAMA_URL,
+    ])
+    if not has_llm:
+        logger.warning(
+            "No LLM provider configured. Resume extraction, job decode, and draft "
+            "generation will fail. Set at least one of: GEMINI_API_KEY, GROQ_API_KEY, "
+            "OPENROUTER_API_KEY, DEEPSEEK_API_KEY, or OLLAMA_URL."
+        )
+
     yield
     await engine.dispose()
 

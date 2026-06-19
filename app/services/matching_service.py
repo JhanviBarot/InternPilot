@@ -249,7 +249,15 @@ class MatchingService:
     ) -> tuple[list[MatchSchema], int]:
         profile = await self._get_profile()
         if profile is None or profile.embedding is None:
-            return [], 0
+            # No profile embedding yet — degrade gracefully to unranked postings
+            # so the feed is not blank on a fresh account.
+            return await self._fetch_postings_unranked(
+                work_mode=work_mode,
+                domain=domain,
+                include_ghosts=include_ghosts,
+                page=page,
+                limit=limit,
+            )
 
         candidates = await self._fetch_candidates(
             profile=profile,
@@ -385,6 +393,53 @@ class MatchingService:
             select(Profile).where(Profile.user_id == self.user_id)
         )
         return result.scalar_one_or_none()
+
+    async def _fetch_postings_unranked(
+        self,
+        *,
+        work_mode: str | None,
+        domain: str | None,
+        include_ghosts: bool,
+        page: int,
+        limit: int,
+    ) -> tuple[list[MatchSchema], int]:
+        """Return active postings sorted by freshness for users without a profile embedding."""
+        stmt = (
+            select(Posting, Company)
+            .join(Company, Posting.company_id == Company.id)
+            .where(Posting.status == "active")
+        )
+        if not include_ghosts:
+            stmt = stmt.where(Posting.is_ghost == False)  # noqa: E712
+        if work_mode:
+            stmt = stmt.where(Posting.work_mode == work_mode)
+        if domain:
+            stmt = stmt.where(Company.domain.ilike(f"%{domain}%"))
+
+        rows = (await self.db.execute(stmt)).all()
+        now = _now_iso()
+
+        def _unranked(posting: Posting, company: Company) -> MatchSchema:
+            rl = _compute_response_likelihood(posting, company)
+            return MatchSchema(
+                posting_id=posting.id,
+                posting=coerce_posting_schema(posting, company),
+                match_score=0.0,
+                match_explanation="Complete your profile to see your personalized match score.",
+                matched_skills=[],
+                missing_skills=[str(r) for r in (posting.requirements or [])],
+                response_likelihood=rl,
+                expected_value=0.0,
+                ghost_score=posting.ghost_score,
+                is_ghost=posting.is_ghost,
+                created_at=now,
+            )
+
+        all_matches = [_unranked(p, c) for p, c in rows]
+        all_matches.sort(key=lambda m: m.response_likelihood, reverse=True)
+        total = len(all_matches)
+        start = (page - 1) * limit
+        return all_matches[start : start + limit], total
 
     async def _fetch_candidates(
         self,

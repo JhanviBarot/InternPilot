@@ -5,7 +5,7 @@ import { Nav } from "@/components/nav";
 import { api, useApi } from "@/lib/api-client";
 import { GhostBadge, MatchRing, Pill } from "@/components/ui-bits";
 import { LoadingState, EmptyState, ErrorState } from "@/components/data-states";
-import { ArrowUpRight, SlidersHorizontal, Users, MapPin, DollarSign, Ghost, FlaskConical, Briefcase, Sparkles } from "lucide-react";
+import { ArrowUpRight, SlidersHorizontal, Users, MapPin, DollarSign, Ghost, FlaskConical, Briefcase, Sparkles, Link2 } from "lucide-react";
 import { motion } from "framer-motion";
 import type { Match, ResearchOpportunity } from "@/lib/mocks";
 
@@ -61,6 +61,51 @@ function ModeToggle({ mode, onChange }: { mode: Mode; onChange: (m: Mode) => voi
 }
 
 const WORK_MODES = ["remote", "hybrid", "onsite"] as const;
+
+function ImportBox({ onImported }: { onImported: () => void }) {
+  const [url, setUrl] = useState("");
+  const [importing, setImporting] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!url.trim()) return;
+    setImporting(true); setErr(null);
+    try {
+      await api.importPosting(url.trim());
+      setUrl("");
+      onImported();
+    } catch (ex: any) {
+      setErr(ex?.message ?? "Import failed.");
+    } finally {
+      setImporting(false);
+    }
+  };
+
+  return (
+    <div className="card-soft p-6 mt-4">
+      <div className="text-xs uppercase tracking-[0.14em] text-muted-foreground font-mono mb-3">Paste a job URL to add it</div>
+      <form onSubmit={submit} className="flex gap-2">
+        <input
+          type="url"
+          value={url}
+          onChange={(e) => setUrl(e.target.value)}
+          placeholder="https://jobs.lever.co/... or any posting URL"
+          className="flex-1 rounded-xl border bg-white px-4 py-2.5 text-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--ring)]"
+          style={{ borderColor: "var(--color-hairline)" }}
+        />
+        <button
+          type="submit"
+          disabled={importing || !url.trim()}
+          className="inline-flex items-center gap-1.5 rounded-full bg-primary text-primary-foreground px-4 py-2 text-xs font-medium hover:bg-[color:var(--primary-hover)] disabled:opacity-60"
+        >
+          <Link2 className="h-3.5 w-3.5" /> {importing ? "Importing…" : "Import"}
+        </button>
+      </form>
+      {err && <p className="mt-2 text-xs" style={{ color: "var(--color-reject)" }}>{err}</p>}
+    </div>
+  );
+}
 
 function CompanyFeed() {
   const [sort, setSort] = useState<SortKey>("ev");
@@ -132,11 +177,14 @@ function CompanyFeed() {
           {loading && <LoadingState label="Scoring matches" />}
           {error && <ErrorState error={error} onRetry={reload} />}
           {!loading && !error && list.length === 0 && (
-            <EmptyState icon={Ghost} title="No live matches right now."
-              body={hideGhosts && ghostsHidden > 0
-                ? `We filtered ${ghostsHidden} likely-ghost ${ghostsHidden === 1 ? "role" : "roles"}. Turn the shield off to see them, or check back tomorrow.`
-                : "New roles are pulled hourly. Tighten your preferences in onboarding to broaden the feed."}
-            />
+            <>
+              <EmptyState icon={Ghost} title="No live matches right now."
+                body={hideGhosts && ghostsHidden > 0
+                  ? `We filtered ${ghostsHidden} likely-ghost ${ghostsHidden === 1 ? "role" : "roles"}. Turn the shield off to see them, or check back tomorrow.`
+                  : "Complete your profile in onboarding to unlock ranked matches, or paste a job URL below to add it directly."}
+              />
+              <ImportBox onImported={reload} />
+            </>
           )}
           {list.map((m, i) => (
             <motion.div key={m.posting.id}

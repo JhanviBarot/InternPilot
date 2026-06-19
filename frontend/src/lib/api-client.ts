@@ -18,7 +18,10 @@ import {
 export type { User } from "./mocks";
 
 export const API_BASE_URL = (import.meta as any).env?.VITE_API_BASE_URL ?? "/api";
-const USE_MOCKS = ((import.meta as any).env?.VITE_USE_MOCKS ?? "false") !== "false";
+// Mocks are opt-in: only enabled when VITE_USE_MOCKS is explicitly "true" or "1".
+// Empty string, undefined, or any other value keeps the real backend active.
+const _mockFlag = String((import.meta as any).env?.VITE_USE_MOCKS ?? "").toLowerCase();
+const USE_MOCKS = _mockFlag === "true" || _mockFlag === "1";
 
 // ---------------------------------------------------------------------------
 // Guest mode — browse-only with mock data; cleared on real login/signup
@@ -627,6 +630,34 @@ export const api = {
       if (f) return f;
     }
     return undefined;
+  },
+
+  async decodePosting(posting_id: string): Promise<{ requirements: string[]; keywords: string[]; summary: string }> {
+    if (!shouldUseMocks()) {
+      const raw = await http<any>("/applications/decode", {
+        method: "POST",
+        body: JSON.stringify({ posting_id }),
+      });
+      return {
+        requirements: Array.isArray(raw?.requirements) ? raw.requirements : [],
+        keywords: Array.isArray(raw?.keywords) ? raw.keywords : [],
+        summary: String(raw?.summary ?? ""),
+      };
+    }
+    await delay(200);
+    return { requirements: [], keywords: [], summary: "" };
+  },
+
+  async importPosting(url: string): Promise<Posting> {
+    if (!shouldUseMocks()) {
+      const raw = await http<any>("/postings/import", {
+        method: "POST",
+        body: JSON.stringify({ url }),
+      });
+      return mapPosting(raw?.posting ?? raw);
+    }
+    await delay(500);
+    return postings[0];
   },
 
   async draftCoverLetter(posting_id: string): Promise<{ content: string; ats_score: number; missing_keywords: string[] }> {
