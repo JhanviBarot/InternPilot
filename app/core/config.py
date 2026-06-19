@@ -53,6 +53,11 @@ class Settings(BaseSettings):
     # Register free at https://firecrawl.dev — 500 scrapes/month on free tier
     FIRECRAWL_API_KEY: str = ""  # us | gb | de | au | in | ca
 
+    # JSearch (RapidAPI) — aggregates LinkedIn + Indeed + Glassdoor (optional)
+    # Register free at https://rapidapi.com/letscrape-6bRBa3QguO5/api/jsearch
+    # Free tier: 200 requests/month
+    JSEARCH_API_KEY: str = ""
+
     # Admin seed token — set this on Render to enable POST /api/admin/seed
     ADMIN_SEED_TOKEN: str = ""
 

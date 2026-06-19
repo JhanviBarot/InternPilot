@@ -1,21 +1,26 @@
 """InterestAggregationService — live, interest-driven fetching with TTL caching.
 
-Flow:
-  1. User visits /matches → fingerprint their skills + research_interests.
-  2. If fingerprint is missing or expired (>TTL_HOURS old) → background-fetch
-     live postings from Adzuna + USAJobs using derived search terms.
-  3. Cache hit → skip fetch, return existing ranked matches immediately.
-  4. Another user with a near-identical profile shares the same fingerprint
-     and therefore shares the cache — no duplicate fetching.
+Pipeline per user visit (when cache is stale):
+  1.  Derive search terms from skills + research_interests.
+  2.  Fire all 4 sources in parallel: Adzuna, USAJobs, JSearch, Remotive.
+  3.  basic_filter(): drop postings with no URL, empty description,
+      clearly-senior roles (Director/VP/Manager without "intern"), duplicates.
+  4.  llm_filter_postings(): send batches of 12 to LLM; keep only those the
+      LLM confirms are (a) internship-level and (b) relevant to the user's
+      fields of interest.  Falls back to title-based filter on LLM error.
+  5.  Upsert survivors via AggregationService._upsert_one() (embedding included).
+  6.  Re-score ghost signals, update cache row with 48-h TTL.
 
-TTL is 48 h for company internships.  A new field of interest always triggers
-a fresh fetch because its fingerprint won't exist in the cache yet.
+Cache key = SHA-256 of sorted canonical interests → shared across users with
+identical profiles, so we never fetch the same interest bucket twice within TTL.
 """
 from __future__ import annotations
 
 import asyncio
 import hashlib
+import json
 import logging
+import re
 from datetime import UTC, datetime, timedelta
 
 import httpx
@@ -29,25 +34,29 @@ logger = logging.getLogger(__name__)
 
 TTL_HOURS = 48
 MAX_TERMS = 5
-PAGES_PER_TERM = 2      # Adzuna free: 250 calls/month; 2 pages × 50 results = 100 per term
-ADZUNA_PER_PAGE = 50
+ADZUNA_PAGES_PER_TERM = 2   # 100 results per term; stays inside 250/month free tier
+LLM_BATCH_SIZE = 12          # postings per LLM call
 
-# Skills that are too generic or tool-specific to produce good Adzuna results
 _SKIP_SKILLS = {
     "git", "github", "linux", "bash", "http", "html", "css", "json", "xml",
     "rest", "excel", "word", "powerpoint", "google", "microsoft", "postman",
     "cursor", "n8n", "rest apis", "object-oriented programming", "oop",
     "data structures", "data structures & algorithms", "algorithms",
-    "sentiment analysis",  # academic, not great as job search term standalone
+}
+
+# Senior-level title words that disqualify a posting unless "intern" also appears
+_SENIOR_WORDS = {
+    "senior", "sr.", "staff", "principal", "director", "vp", "vice president",
+    "head of", "manager", "lead ", "architect", "distinguished", "fellow",
 }
 
 
 # ---------------------------------------------------------------------------
-# Pure helpers (no DB needed)
+# Pure helpers — fingerprint + search-term extraction
 # ---------------------------------------------------------------------------
 
 def make_fingerprint(skills: list[str], research_interests: list[str]) -> str:
-    """Stable 32-char hash of sorted interests → shared cache key."""
+    """32-char SHA-256 of sorted canonical interests → shared cache key."""
     canonical = sorted(
         s.lower().strip() for s in (skills[:10] + research_interests) if s.strip()
     )
@@ -58,13 +67,11 @@ def extract_search_terms(skills: list[str], research_interests: list[str]) -> li
     """Derive up to MAX_TERMS meaningful search queries from a user's profile."""
     terms: list[str] = []
 
-    # Research interests are the most domain-specific signal
     for interest in research_interests[:3]:
         interest = interest.strip()
         if interest and len(interest) > 2:
             terms.append(f"{interest} internship")
 
-    # Technical skills — filter out generic/tool keywords
     meaningful = [
         s for s in skills
         if s.lower().strip() not in _SKIP_SKILLS and len(s) > 2
@@ -72,11 +79,128 @@ def extract_search_terms(skills: list[str], research_interests: list[str]) -> li
     for skill in meaningful[: MAX_TERMS - len(terms)]:
         terms.append(f"{skill} internship")
 
-    # Always have at least one term
     if not terms:
         terms = ["software engineering internship", "technology internship"]
 
     return terms[:MAX_TERMS]
+
+
+# ---------------------------------------------------------------------------
+# Pre-filter: fast, no LLM, cuts obviously irrelevant postings
+# ---------------------------------------------------------------------------
+
+def basic_filter(raws: list[RawPosting]) -> list[RawPosting]:
+    """
+    Drop postings that:
+    - Have no source_url or empty title
+    - Have a description shorter than 50 characters
+    - Are clearly senior-level roles without 'intern' in the title
+    Deduplicate by (lowercase title, lowercase company).
+    """
+    seen: set[tuple[str, str]] = set()
+    kept: list[RawPosting] = []
+
+    for raw in raws:
+        title = str(raw.get("title") or "").strip()
+        url = str(raw.get("source_url") or "").strip()
+        description = str(raw.get("description") or "")
+        company = str(raw.get("company_name") or "").strip()
+
+        if not title or not url:
+            continue
+        if len(description) < 50:
+            continue
+
+        title_lower = title.lower()
+        is_intern = "intern" in title_lower
+        if not is_intern and any(w in title_lower for w in _SENIOR_WORDS):
+            continue
+
+        key = (title_lower, company.lower())
+        if key in seen:
+            continue
+        seen.add(key)
+
+        kept.append(raw)
+
+    return kept
+
+
+# ---------------------------------------------------------------------------
+# LLM relevance gate
+# ---------------------------------------------------------------------------
+
+def _strip_html(text: str) -> str:
+    return re.sub(r"<[^>]+>", " ", text).strip()
+
+
+async def llm_filter_postings(
+    raws: list[RawPosting],
+    skills: list[str],
+    research_interests: list[str],
+) -> list[RawPosting]:
+    """
+    Send batches of LLM_BATCH_SIZE postings to the LLM.
+    Keep only those the LLM confirms are:
+      (1) an internship / intern-level role
+      (2) relevant to the user's skills + research interests
+    Falls back to title-based filter ('intern' in title) on any LLM error.
+    """
+    from app.llm.router import complete
+
+    interests_str = ", ".join((research_interests[:4] + skills[:6]))
+    kept: list[RawPosting] = []
+
+    for batch_start in range(0, len(raws), LLM_BATCH_SIZE):
+        batch = raws[batch_start : batch_start + LLM_BATCH_SIZE]
+
+        listing_lines = []
+        for idx, raw in enumerate(batch):
+            snippet = _strip_html(str(raw.get("description") or ""))[:180].replace("\n", " ")
+            listing_lines.append(
+                f"{idx}. \"{raw.get('title', '')}\" at {raw.get('company_name', '?')} — {snippet}"
+            )
+        listing_text = "\n".join(listing_lines)
+
+        prompt = (
+            f"User's fields of interest: {interests_str}\n\n"
+            f"Below are {len(batch)} job listings (index. title at company — description snippet).\n"
+            f"Return ONLY a JSON array of 0-based indices for listings that are:\n"
+            f"  1. An internship or intern-level role\n"
+            f"  2. Relevant to the user's fields of interest above\n\n"
+            f"Reply with only the JSON array, nothing else. Example: [0,2,5]\n"
+            f"If none qualify, reply: []\n\n"
+            f"Listings:\n{listing_text}"
+        )
+
+        try:
+            result = await complete([
+                {
+                    "role": "system",
+                    "content": (
+                        "You are a job relevance classifier. "
+                        "Reply ONLY with a valid JSON array of integers. No explanation."
+                    ),
+                },
+                {"role": "user", "content": prompt},
+            ])
+
+            match = re.search(r"\[[\d\s,]*\]", result or "")
+            if match:
+                indices: list[int] = json.loads(match.group())
+                for idx in indices:
+                    if isinstance(idx, int) and 0 <= idx < len(batch):
+                        kept.append(batch[idx])
+            else:
+                raise ValueError(f"no JSON array in LLM response: {result!r}")
+
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("llm_filter batch %d failed (%s) — falling back to title filter", batch_start, exc)
+            for raw in batch:
+                if "intern" in str(raw.get("title") or "").lower():
+                    kept.append(raw)
+
+    return kept
 
 
 # ---------------------------------------------------------------------------
@@ -106,49 +230,92 @@ class InterestAggregationService:
         skills: list[str],
         research_interests: list[str],
     ) -> int:
-        """Fetch live postings for the given interest profile and persist them."""
-        terms = extract_search_terms(skills, research_interests)
-        logger.info("interest_refresh fingerprint=%s terms=%s", fingerprint[:8], terms)
-
+        """
+        Full pipeline: fetch → filter → llm-gate → upsert → cache.
+        Returns number of net-new postings ingested.
+        """
         from app.core.config import settings
 
-        raws: list[RawPosting] = []
+        terms = extract_search_terms(skills, research_interests)
+        logger.info("interest_refresh fp=%s terms=%s", fingerprint[:8], terms)
 
-        # ── Adzuna (keyword-searchable, cross-industry) ─────────────────────
-        adzuna_id = getattr(settings, "ADZUNA_APP_ID", "")
-        adzuna_key = getattr(settings, "ADZUNA_APP_KEY", "")
-        adzuna_country = getattr(settings, "ADZUNA_COUNTRY", "us")
+        # ── 1. Gather from all 4 sources in parallel ─────────────────────────
+        adzuna_id   = getattr(settings, "ADZUNA_APP_ID",   "")
+        adzuna_key  = getattr(settings, "ADZUNA_APP_KEY",  "")
+        adzuna_ctry = getattr(settings, "ADZUNA_COUNTRY",  "us")
+        usa_key     = getattr(settings, "USAJOBS_API_KEY", "")
+        usa_email   = getattr(settings, "USAJOBS_EMAIL",   "")
+        jsearch_key = getattr(settings, "JSEARCH_API_KEY", "")
+
+        tasks: list[asyncio.Task] = []
+
         if adzuna_id and adzuna_key:
             for term in terms:
-                raws.extend(
-                    await _adzuna_search(term, adzuna_id, adzuna_key, adzuna_country)
-                )
+                tasks.append(asyncio.create_task(
+                    _adzuna_search(term, adzuna_id, adzuna_key, adzuna_ctry)
+                ))
 
-        # ── USAJobs (free, broad government + research internships) ─────────
-        usa_key = getattr(settings, "USAJOBS_API_KEY", "")
-        usa_email = getattr(settings, "USAJOBS_EMAIL", "")
         if usa_key and usa_email:
-            for term in terms[:3]:  # USAJobs is slower; limit to top 3 terms
-                raws.extend(await _usajobs_search(term, usa_key, usa_email))
+            for term in terms[:3]:
+                tasks.append(asyncio.create_task(
+                    _usajobs_search(term, usa_key, usa_email)
+                ))
 
-        # ── Persist via aggregation service ─────────────────────────────────
+        if jsearch_key:
+            for term in terms:
+                tasks.append(asyncio.create_task(
+                    _jsearch_search(term, jsearch_key)
+                ))
+
+        # Remotive is free / no auth — always included
+        for term in terms[:3]:
+            tasks.append(asyncio.create_task(_remotive_search(term)))
+
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+
+        raws: list[RawPosting] = []
+        for r in results:
+            if isinstance(r, list):
+                raws.extend(r)
+            elif isinstance(r, Exception):
+                logger.warning("source_task_error: %s", r)
+
+        logger.info("interest_refresh fp=%s raw=%d", fingerprint[:8], len(raws))
+
+        # ── 2. Pre-filter ─────────────────────────────────────────────────────
+        filtered = basic_filter(raws)
+        logger.info("interest_refresh fp=%s after_basic=%d", fingerprint[:8], len(filtered))
+
+        # ── 3. LLM relevance gate ─────────────────────────────────────────────
+        relevant: list[RawPosting] = []
+        if filtered:
+            try:
+                relevant = await llm_filter_postings(filtered, skills, research_interests)
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("llm_filter_total_fail: %s — keeping title-filtered", exc)
+                relevant = [r for r in filtered if "intern" in str(r.get("title") or "").lower()]
+
+        logger.info("interest_refresh fp=%s after_llm=%d", fingerprint[:8], len(relevant))
+
+        # ── 4. Upsert survivors ───────────────────────────────────────────────
         from app.services.aggregation_service import AggregationService
         from app.services.ghost_service import GhostService
 
         agg = AggregationService(self.db)
         ingested = 0
-        for raw in raws:
+        for raw in relevant:
             try:
                 duped = await agg._upsert_one(raw)
                 if not duped:
                     ingested += 1
             except Exception as exc:  # noqa: BLE001
-                logger.warning("upsert_failed title=%s error=%s", raw.get("title"), exc)
+                logger.warning("upsert_failed title=%s err=%s", raw.get("title"), exc)
                 await self.db.rollback()
 
+        # ── 5. Ghost rescore ──────────────────────────────────────────────────
         await GhostService(self.db).rescore_all()
 
-        # ── Update cache entry ───────────────────────────────────────────────
+        # ── 6. Update cache ───────────────────────────────────────────────────
         now = datetime.now(UTC)
         existing = (
             await self.db.execute(
@@ -164,27 +331,24 @@ class InterestAggregationService:
             existing.expires_at = now + timedelta(hours=TTL_HOURS)
             existing.result_count = ingested
         else:
-            self.db.add(
-                InterestSearchCache(
-                    fingerprint=fingerprint,
-                    search_terms=terms,
-                    last_fetched_at=now,
-                    expires_at=now + timedelta(hours=TTL_HOURS),
-                    result_count=ingested,
-                )
-            )
+            self.db.add(InterestSearchCache(
+                fingerprint=fingerprint,
+                search_terms=terms,
+                last_fetched_at=now,
+                expires_at=now + timedelta(hours=TTL_HOURS),
+                result_count=ingested,
+            ))
         await self.db.commit()
 
         logger.info(
-            "interest_refresh_done fingerprint=%s ingested=%d terms=%s",
-            fingerprint[:8], ingested, terms,
+            "interest_refresh_done fp=%s raw=%d filtered=%d llm_passed=%d ingested=%d",
+            fingerprint[:8], len(raws), len(filtered), len(relevant), ingested,
         )
         return ingested
 
 
 # ---------------------------------------------------------------------------
-# Background task entry-point (creates its own session so it survives the
-# HTTP request lifecycle)
+# Background entry-point — owns its own DB session
 # ---------------------------------------------------------------------------
 
 async def refresh_interests_background(
@@ -192,7 +356,6 @@ async def refresh_interests_background(
     skills: list[str],
     research_interests: list[str],
 ) -> None:
-    """Fire-and-forget coroutine; always creates a fresh DB session."""
     from app.core.database import AsyncSessionLocal
 
     async with AsyncSessionLocal() as db:
@@ -204,7 +367,7 @@ async def refresh_interests_background(
 
 
 # ---------------------------------------------------------------------------
-# Source helpers (lean versions that accept custom search terms)
+# Source helpers — each accepts a custom search term
 # ---------------------------------------------------------------------------
 
 async def _adzuna_search(
@@ -213,13 +376,13 @@ async def _adzuna_search(
     app_key: str,
     country: str,
 ) -> list[RawPosting]:
-    from app.sources.adzuna import _parse_job as _adzuna_parse
+    from app.sources.adzuna import _parse_job as _parse
 
     results: list[RawPosting] = []
     base = f"https://api.adzuna.com/v1/api/jobs/{country}/search/{{page}}"
 
     async with httpx.AsyncClient(timeout=20.0) as client:
-        for page in range(1, PAGES_PER_TERM + 1):
+        for page in range(1, ADZUNA_PAGES_PER_TERM + 1):
             try:
                 resp = await client.get(
                     base.format(page=page),
@@ -227,7 +390,7 @@ async def _adzuna_search(
                         "app_id": app_id,
                         "app_key": app_key,
                         "what": term,
-                        "results_per_page": ADZUNA_PER_PAGE,
+                        "results_per_page": 50,
                         "content-type": "application/json",
                         "sort_by": "date",
                     },
@@ -235,42 +398,83 @@ async def _adzuna_search(
                 if resp.status_code != 200:
                     break
                 for job in resp.json().get("results") or []:
-                    parsed = _adzuna_parse(job)
+                    parsed = _parse(job)
                     if parsed:
                         results.append(parsed)
             except Exception as exc:  # noqa: BLE001
-                logger.warning("adzuna_search term=%r page=%d error=%s", term, page, exc)
+                logger.warning("adzuna term=%r page=%d err=%s", term, page, exc)
                 break
 
     return results
 
 
 async def _usajobs_search(term: str, api_key: str, email: str) -> list[RawPosting]:
-    from app.sources.usajobs import _parse_job as _usa_parse
+    from app.sources.usajobs import _parse_job as _parse
 
     results: list[RawPosting] = []
-    headers = {
-        "Host": "data.usajobs.gov",
-        "User-Agent": email,
-        "Authorization-Key": api_key,
-    }
     try:
         async with httpx.AsyncClient(timeout=20.0) as client:
             resp = await client.get(
                 "https://data.usajobs.gov/api/search",
-                headers=headers,
+                headers={
+                    "Host": "data.usajobs.gov",
+                    "User-Agent": email,
+                    "Authorization-Key": api_key,
+                },
                 params={"Keyword": term, "NumberOfResults": 100, "Fields": "Minimum"},
             )
             if resp.status_code == 200:
                 for item in (
-                    resp.json()
-                    .get("SearchResult", {})
-                    .get("SearchResultItems", [])
+                    resp.json().get("SearchResult", {}).get("SearchResultItems", [])
                 ):
-                    parsed = _usa_parse(item)
+                    parsed = _parse(item)
                     if parsed:
                         results.append(parsed)
     except Exception as exc:  # noqa: BLE001
-        logger.warning("usajobs_search term=%r error=%s", term, exc)
+        logger.warning("usajobs term=%r err=%s", term, exc)
+
+    return results
+
+
+async def _jsearch_search(term: str, api_key: str) -> list[RawPosting]:
+    from app.sources.jsearch import JSearchSource
+    src = JSearchSource()
+    try:
+        return await src.fetch_by_term(term, api_key)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("jsearch term=%r err=%s", term, exc)
+        return []
+
+
+async def _remotive_search(term: str) -> list[RawPosting]:
+    results: list[RawPosting] = []
+    try:
+        async with httpx.AsyncClient(timeout=20.0) as client:
+            resp = await client.get(
+                "https://remotive.com/api/remote-jobs",
+                params={"search": term, "limit": 50},
+            )
+            if resp.status_code != 200:
+                return results
+            for job in resp.json().get("jobs") or []:
+                title = str(job.get("title") or "").strip()
+                url = str(job.get("url") or "").strip()
+                if not title or not url:
+                    continue
+                description = re.sub(r"<[^>]+>", " ", str(job.get("description") or "")).strip()
+                results.append({
+                    "title": title,
+                    "company_name": str(job.get("company_name") or ""),
+                    "description": description,
+                    "source": "remotive",
+                    "source_url": url,
+                    "location": str(job.get("candidate_required_location") or "Remote") or "Remote",
+                    "work_mode": "remote",
+                    "stipend": None,
+                    "posted_at": str(job.get("publication_date") or "") or None,
+                    "requirements": [],
+                })
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("remotive term=%r err=%s", term, exc)
 
     return results
