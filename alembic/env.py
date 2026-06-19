@@ -11,12 +11,22 @@ from sqlalchemy.ext.asyncio import async_engine_from_config
 
 from alembic import context
 
-# Import all models so Alembic can see them for autogenerate
+# Import ALL models so Alembic can see every table for autogenerate.
+# Keep this list in sync with app/models/.
 from app.core.config import settings
+from app.models.application import Application  # noqa: F401
+from app.models.artifact import Artifact  # noqa: F401
 from app.models.base import Base
 from app.models.company import Company  # noqa: F401
+from app.models.contact import Contact  # noqa: F401
+from app.models.evaluation import Evaluation  # noqa: F401
+from app.models.notification import Notification  # noqa: F401
+from app.models.outcome import Outcome  # noqa: F401
 from app.models.posting import Posting  # noqa: F401
 from app.models.profile import Profile  # noqa: F401
+from app.models.referral import Referral  # noqa: F401
+from app.models.research_opportunity import ResearchOpportunity  # noqa: F401
+from app.models.research_outreach import ResearchOutreach  # noqa: F401
 from app.models.user import User  # noqa: F401
 
 config = context.config
