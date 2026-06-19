@@ -150,7 +150,7 @@ class DashboardService(BaseService):
             await self.db.execute(
                 select(Company)
                 .where(Company.cohort_applied_count > 0)
-                .order_by(Company.responsiveness_score.desc(), Company.cohort_applied_count.desc())
+                .order_by(Company.responsiveness_score.desc(), Company.cohort_applied_count.desc(), Company.id.desc())
                 .limit(8)
             )
         ).scalars().all()

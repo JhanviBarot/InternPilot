@@ -180,6 +180,7 @@ function AssistantInner({ m }: { m: Match }) {
   const [showReview, setShowReview] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
+  const [editedContent, setEditedContent] = useState<string>("");
 
   // Draft state — managed manually so we can cache
   const [draft, setDraft] = useState<{ artifact_id: string; content: string; ats_score: number; missing_keywords: string[] } | null>(null);
@@ -231,6 +232,7 @@ function AssistantInner({ m }: { m: Match }) {
       const d = await api.draftCoverLetter(m.posting.id);
       if (!cancelled) {
         setDraft(d);
+        setEditedContent("");
         if (d.artifact_id) setCachedDraftId(m.posting.id, d.artifact_id);
       }
     };
@@ -248,13 +250,17 @@ function AssistantInner({ m }: { m: Match }) {
   // Job summary: show loading until decoded, then use LLM summary, never raw HTML
   const rawDesc = m.posting.description ?? "";
   const cleanDesc = rawDesc.startsWith("<") || rawDesc.includes("&lt;") ? stripHtml(rawDesc) : rawDesc;
-  const summary = decoded?.summary || (decodeLoading ? "" : cleanDesc.slice(0, 400) + (cleanDesc.length > 400 ? "…" : ""));
+  const snippet = (() => {
+    if (cleanDesc.length <= 400) return cleanDesc;
+    const cut = cleanDesc.lastIndexOf(". ", 400);
+    return (cut > 100 ? cleanDesc.slice(0, cut + 1) : cleanDesc.slice(0, 400)) + "…";
+  })();
+  const summary = decoded?.summary || (decodeLoading ? "" : snippet);
   const requirements = decoded?.requirements?.length ? decoded.requirements : m.posting.requirements;
 
   const getEditedContent = (): string => {
-    if (draftRef.current) {
-      return draftRef.current.innerText || draftRef.current.textContent || draft?.content || "";
-    }
+    if (editedContent) return editedContent;
+    if (draftRef.current) return draftRef.current.textContent || draft?.content || "";
     return draft?.content || "";
   };
 
@@ -439,10 +445,12 @@ function AssistantInner({ m }: { m: Match }) {
             </div>
           ) : draft?.content ? (
             <div
+              key={draft.artifact_id}
               ref={draftRef}
               className="card-soft mt-6 p-10 leading-relaxed text-[15px] font-display focus:outline-none focus:ring-2 focus:ring-primary/20 rounded-2xl"
               contentEditable
               suppressContentEditableWarning
+              onInput={(e) => setEditedContent((e.currentTarget as HTMLDivElement).textContent ?? "")}
               style={{ minHeight: "320px" }}
             >
               {draft.content.split("\n\n").map((para, i) => (

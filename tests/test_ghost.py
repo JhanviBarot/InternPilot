@@ -195,7 +195,7 @@ async def test_formula_exact_weighted_sum(db: AsyncSession) -> None:
 
 def test_is_ghost_flips_at_threshold() -> None:
     """Weight constants must sum to 1.0; GHOST_THRESHOLD is the warm-start value."""
-    assert GHOST_THRESHOLD == 0.38
+    assert GHOST_THRESHOLD == 0.50
     total = AGE_WEIGHT + REPOST_WEIGHT + VAGUE_WEIGHT + COMPANY_WEIGHT + COHORT_WEIGHT
     assert abs(total - 1.0) < 1e-9
 

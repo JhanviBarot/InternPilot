@@ -38,8 +38,9 @@ function DashboardInner({ d, notifications: initialNotifications }: { d: Dashboa
   useEffect(() => { setNotifications(initialNotifications); }, [initialNotifications]);
 
   const markRead = async (id: string) => {
+    const previous = notifications;
     setNotifications((prev) => prev.map((n) => n.id === id ? { ...n, read: true } : n));
-    try { await api.markNotificationRead(id); } catch { /* revert on failure */ setNotifications((prev) => prev.map((n) => n.id === id ? { ...n, read: false } : n)); }
+    try { await api.markNotificationRead(id); } catch { setNotifications(previous); }
   };
 
   const scrollToActivity = () => activityRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -85,23 +86,26 @@ function DashboardInner({ d, notifications: initialNotifications }: { d: Dashboa
         <div className="card-soft p-8">
           <div className="text-xs uppercase tracking-[0.14em] text-muted-foreground">Pipeline</div>
           <div className="mt-4 space-y-3">
-            {Object.entries(d.pipeline).map(([k, v]) => (
-              <div key={k}>
-                <div className="flex justify-between text-sm">
-                  <span className="capitalize">{k}</span>
-                  <span className="font-mono">{v}</span>
+            {(() => {
+              const pipelineMax = Math.max(1, ...Object.values(d.pipeline));
+              return Object.entries(d.pipeline).map(([k, v]) => (
+                <div key={k}>
+                  <div className="flex justify-between text-sm">
+                    <span className="capitalize">{k}</span>
+                    <span className="font-mono">{v}</span>
+                  </div>
+                  <div className="mt-1.5 h-1.5 rounded-full bg-secondary overflow-hidden">
+                    <div
+                      className="h-full rounded-full"
+                      style={{
+                        width: `${Math.min(100, (v / pipelineMax) * 100)}%`,
+                        background: k === "ghosted" || k === "rejected" ? "var(--color-ghost)" : "var(--color-primary)",
+                      }}
+                    />
+                  </div>
                 </div>
-                <div className="mt-1.5 h-1.5 rounded-full bg-secondary overflow-hidden">
-                  <div
-                    className="h-full rounded-full"
-                    style={{
-                      width: `${Math.min(100, (v / 14) * 100)}%`,
-                      background: k === "ghosted" || k === "rejected" ? "var(--color-ghost)" : "var(--color-primary)",
-                    }}
-                  />
-                </div>
-              </div>
-            ))}
+              ));
+            })()}
           </div>
         </div>
       </div>
@@ -179,7 +183,7 @@ function Row({ company, rate, note }: { company: string; rate: string; note: str
 
 function IQChart({ points }: { points: { date: string; value: number }[] }) {
   const w = 600, h = 200, pad = 24;
-  const max = 80;
+  const max = Math.max(100, ...points.map((p) => p.value));
   if (points.length === 0) {
     return <div className="mt-6 h-56 flex items-center justify-center text-xs text-muted-foreground">No data yet — apply to some roles to see your IQ trend.</div>;
   }

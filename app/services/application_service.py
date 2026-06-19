@@ -416,6 +416,15 @@ class ApplicationService(BaseService):
                     )
             edu_bullets = "\n".join(f"  - {e}" for e in edu_parts)
 
+        # Guard: require at least some profile evidence so the draft is grounded
+        if not skills and not project_techs and not experience_text.strip():
+            raise APIError(
+                400,
+                "INCOMPLETE_PROFILE",
+                "Your profile has no skills, projects, or experience. "
+                "Upload your résumé first so the draft is grounded in real information.",
+            )
+
         # Get actual requirements for ATS (not all keywords)
         requirements = self._ats_requirements(posting)
         reqs_str = ", ".join(requirements) if requirements else ", ".join(str(r) for r in (posting.requirements or []))
@@ -697,7 +706,7 @@ class ApplicationService(BaseService):
         artifact.content = content
         artifact.version = (artifact.version or 1) + 1
 
-        # Re-score ATS if we have a linked application → posting
+        # Re-score ATS and grounding if we have a linked application → posting
         if artifact.application_id is not None:
             app = (
                 await self.db.execute(
@@ -706,10 +715,27 @@ class ApplicationService(BaseService):
             ).scalar_one_or_none()
             if app is not None:
                 posting = await self._get_posting(app.posting_id)
-                keywords = [str(r) for r in (posting.requirements or [])]
-                ats, missing = _compute_ats(keywords, content)
+                requirements = self._ats_requirements(posting)
+                ats, missing = _compute_ats(requirements, content)
                 artifact.ats_score = ats
                 artifact.missing_keywords = missing
+                profile = await self._get_profile()
+                if profile is not None:
+                    skills = [str(s) for s in (profile.skills or [])]
+                    proj_techs = [
+                        str(t)
+                        for proj in (profile.projects or [])
+                        if isinstance(proj, dict)
+                        for t in proj.get("tech", [])
+                    ]
+                    exp_text = " ".join(
+                        str(e.get("description", ""))
+                        for e in (profile.experience or [])
+                        if isinstance(e, dict) and e.get("description")
+                    )
+                    artifact.grounding_score = _grounding_score(
+                        content, requirements, skills, proj_techs, exp_text
+                    )
 
         self.db.add(artifact)
         await self.db.commit()

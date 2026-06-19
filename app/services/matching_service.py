@@ -62,8 +62,9 @@ def _compute_skill_overlap(
 ) -> tuple[list[str], list[str]]:
     """Return (matched, missing) for a single posting.
 
-    Case-insensitive; allows simple substring match in either direction so
-    "Python" matches "Python 3.x" and vice-versa.
+    Case-insensitive substring match in either direction so "Python" matches
+    "Python 3.x". Short tokens (≤ 2 chars) use exact match only to prevent
+    "Go" matching "django" or "postgresql" as a false positive.
     """
     if not requirements:
         return [], []
@@ -72,7 +73,16 @@ def _compute_skill_overlap(
     missing: list[str] = []
     for req in requirements:
         req_norm = req.strip().lower()
-        if any(skill in req_norm or req_norm in skill for skill in normalized):
+        hit = False
+        for skill in normalized:
+            if len(skill) <= 2 or len(req_norm) <= 2:
+                if skill == req_norm:
+                    hit = True
+                    break
+            elif skill in req_norm or req_norm in skill:
+                hit = True
+                break
+        if hit:
             matched.append(req)
         else:
             missing.append(req)
@@ -89,6 +99,8 @@ def _freshness(posting: Posting) -> float:
     else:
         try:
             dt = datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=UTC)
         except (ValueError, TypeError):
             return 0.5
     try:
@@ -119,16 +131,18 @@ def _compute_response_likelihood(posting: Posting, company: Company) -> float:
     """
     fresh = _freshness(posting)
     applied = int(getattr(company, "cohort_applied_count", 0) or 0)
+    # Clamp ghost scores — DB values are floats and may drift above 1.0 due to bugs
+    ghost = max(0.0, min(1.0, float(posting.ghost_score or 0.0)))
 
     if applied >= _COHORT_MIN_APPS:
         cohort_rate = float(company.responsiveness_score or 0.0)
         score = (
             _RL_COHORT_WEIGHT * cohort_rate
             + _RL_FRESH_WEIGHT * fresh
-            + _RL_GHOST_WEIGHT * (1.0 - posting.ghost_score)
+            + _RL_GHOST_WEIGHT * (1.0 - ghost)
         )
     else:
-        ghost_hist = float(company.ghost_history_score or 0.0)
+        ghost_hist = max(0.0, min(1.0, float(company.ghost_history_score or 0.0)))
         score = (
             _RL_COLD_FRESH_WEIGHT * fresh
             + _RL_COLD_GHOST_WEIGHT * (1.0 - ghost_hist)

@@ -310,7 +310,7 @@ function MatchCard({ m }: { m: Match }) {
           <span className="text-sm">{m.posting.company.name}</span>
           <a href={m.posting.source_url} target="_blank" rel="noreferrer" aria-label="Open original posting" className="text-muted-foreground hover:text-foreground"><ArrowUpRight className="h-4 w-4" /></a>
         </div>
-        <p className="mt-2 text-sm text-muted-foreground max-w-2xl">{m.match_explanation}</p>
+        <p className="mt-2 text-sm text-muted-foreground max-w-2xl line-clamp-3">{m.match_explanation}</p>
         <div className="mt-4 flex flex-wrap items-center gap-2">
           <GhostBadge isGhost={m.is_ghost} score={m.ghost_score} />
           <Pill><MapPin className="h-3 w-3 mr-1" />{m.posting.location} · {m.posting.work_mode}</Pill>
