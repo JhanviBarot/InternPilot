@@ -12,6 +12,14 @@ export const Route = createFileRoute("/tracker")({
   component: Tracker,
 });
 
+const FOLLOWUP_DAYS = 14;
+
+function followupLabel(lastStatusAt: string): string {
+  const elapsed = Math.floor((Date.now() - new Date(lastStatusAt).getTime()) / 86_400_000);
+  const remaining = FOLLOWUP_DAYS - elapsed;
+  return remaining <= 0 ? "follow up now" : `follow up in ${remaining}d`;
+}
+
 const COLS: { key: ApplicationStatus; label: string }[] = [
   { key: "saved", label: "Saved" },
   { key: "applied", label: "Applied" },
@@ -83,7 +91,7 @@ function Tracker() {
                           </div>
                           {(c.key === "applied" || c.key === "viewed") && (
                             <div className="mt-2 inline-flex items-center gap-1 rounded-full bg-[color-mix(in_oklab,var(--color-warm)_12%,white)] px-2 py-0.5 text-[10px] font-medium" style={{ color: "color-mix(in oklab, var(--color-warm) 75%, black)" }}>
-                              <Bell className="h-2.5 w-2.5" /> follow up in 4d
+                              <Bell className="h-2.5 w-2.5" /> {followupLabel(a.last_status_at)}
                             </div>
                           )}
                         </button>

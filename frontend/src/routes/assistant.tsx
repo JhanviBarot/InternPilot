@@ -1,4 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
+import { useState } from "react";
 import { CalmBackground } from "@/components/live-background";
 import { Nav } from "@/components/nav";
 import { api, useApi } from "@/lib/api-client";
@@ -36,9 +37,17 @@ function Assistant() {
 }
 
 function AssistantInner({ m }: { m: Match }) {
-  // Mock artifact + ATS data derived from the match.
-  const atsScore = Math.round(70 + m.match_score * 25);
-  const missing = m.missing_skills.length ? m.missing_skills : ["Yjs", "OT operations"];
+  const [nonce, setNonce] = useState(0);
+  const { data: draft, loading: draftLoading } = useApi(
+    () => api.draftCoverLetter(m.posting.id),
+    [m.posting.id, nonce],
+  );
+
+  // Use backend ATS score when available; fall back to match-derived estimate
+  const atsScore = draft?.ats_score ? draft.ats_score : Math.round(70 + m.match_score * 25);
+  const missing = draft?.missing_keywords?.length
+    ? draft.missing_keywords
+    : (m.missing_skills.length ? m.missing_skills : ["Yjs", "OT operations"]);
 
   return (
     <div className="grid gap-8 md:grid-cols-[420px_1fr]">
@@ -83,8 +92,13 @@ function AssistantInner({ m }: { m: Match }) {
             <h1 className="mt-2 font-display text-4xl tracking-tight">Cover letter</h1>
           </div>
           <div className="flex gap-2">
-            <button className="inline-flex items-center gap-1.5 rounded-full border bg-white px-3 py-1.5 text-xs hover:bg-secondary" style={{ borderColor: "var(--color-hairline)" }}>
-              <RefreshCw className="h-3.5 w-3.5" /> Regenerate
+            <button
+              onClick={() => setNonce((n) => n + 1)}
+              disabled={draftLoading}
+              className="inline-flex items-center gap-1.5 rounded-full border bg-white px-3 py-1.5 text-xs hover:bg-secondary disabled:opacity-60"
+              style={{ borderColor: "var(--color-hairline)" }}
+            >
+              <RefreshCw className={`h-3.5 w-3.5 ${draftLoading ? "animate-spin" : ""}`} /> Regenerate
             </button>
             <button className="inline-flex items-center gap-1.5 rounded-full bg-primary text-primary-foreground px-4 py-1.5 text-xs font-medium hover:bg-[color:var(--primary-hover)]">
               <Send className="h-3.5 w-3.5" /> Review &amp; send
@@ -92,25 +106,38 @@ function AssistantInner({ m }: { m: Match }) {
           </div>
         </div>
 
-        <div className="card-soft mt-6 p-10 leading-relaxed text-[15px] font-display"
-             contentEditable suppressContentEditableWarning>
-          <p>Hi {m.posting.company.name} team,</p>
-          <p className="mt-4">
-            I&apos;ve been pulling at the same threads your {m.posting.title.toLowerCase()} team is working on. In <em>rustpad-mini</em> I shipped a CRDT-backed
-            editor in Rust + WASM with conflict-free cursor sync — the same problem space, just at a much smaller scale.
-            The tradeoffs around presence under network partition are still on my mind.
-          </p>
-          <p className="mt-4">
-            Most recently at Replicate I shipped 14 PRs to the inference tooling, optimizing a hot serving path that cut p95 latency
-            by 38%. I care about the same things you publicly care about: a calm interface, tight feedback loops, and code that
-            doesn&apos;t apologize for itself.
-          </p>
-          <p className="mt-4">
-            I&apos;d love to spend the summer on the {m.posting.title.toLowerCase().includes("editor") ? "editor" : "platform"} surface.
-            I&apos;m also happy to take a small async take-home if it&apos;d be useful.
-          </p>
-          <p className="mt-4">— Maya</p>
-        </div>
+        {draftLoading ? (
+          <div className="card-soft mt-6 p-10 flex items-center justify-center min-h-[320px]">
+            <LoadingState label="Drafting cover letter" />
+          </div>
+        ) : draft?.content ? (
+          <div className="card-soft mt-6 p-10 leading-relaxed text-[15px] font-display"
+               contentEditable suppressContentEditableWarning>
+            {draft.content.split("\n\n").map((para, i) => (
+              <p key={i} className={i > 0 ? "mt-4" : ""}>{para}</p>
+            ))}
+          </div>
+        ) : (
+          <div className="card-soft mt-6 p-10 leading-relaxed text-[15px] font-display"
+               contentEditable suppressContentEditableWarning>
+            <p>Hi {m.posting.company.name} team,</p>
+            <p className="mt-4">
+              I&apos;ve been pulling at the same threads your {m.posting.title.toLowerCase()} team is working on. In <em>rustpad-mini</em> I shipped a CRDT-backed
+              editor in Rust + WASM with conflict-free cursor sync — the same problem space, just at a much smaller scale.
+              The tradeoffs around presence under network partition are still on my mind.
+            </p>
+            <p className="mt-4">
+              Most recently at Replicate I shipped 14 PRs to the inference tooling, optimizing a hot serving path that cut p95 latency
+              by 38%. I care about the same things you publicly care about: a calm interface, tight feedback loops, and code that
+              doesn&apos;t apologize for itself.
+            </p>
+            <p className="mt-4">
+              I&apos;d love to spend the summer on the {m.posting.title.toLowerCase().includes("editor") ? "editor" : "platform"} surface.
+              I&apos;m also happy to take a small async take-home if it&apos;d be useful.
+            </p>
+            <p className="mt-4">— Maya</p>
+          </div>
+        )}
 
         <div className="mt-4 flex items-center gap-2 text-xs text-muted-foreground">
           <FileText className="h-3.5 w-3.5" /> Attachments: resume.pdf, projects.pdf · auto-tailored to this posting

@@ -629,6 +629,23 @@ export const api = {
     return undefined;
   },
 
+  async draftCoverLetter(posting_id: string): Promise<{ content: string; ats_score: number; missing_keywords: string[] }> {
+    if (!shouldUseMocks()) {
+      const raw = await http<any>("/applications/draft", {
+        method: "POST",
+        body: JSON.stringify({ posting_id, type: "cover_letter", channel: "portal" }),
+      });
+      const a = raw?.artifact ?? raw;
+      return {
+        content: String(a.content ?? ""),
+        ats_score: Number(a.ats_score ?? 0),
+        missing_keywords: Array.isArray(a.missing_keywords) ? a.missing_keywords : [],
+      };
+    }
+    await delay(280);
+    return { content: "", ats_score: 0, missing_keywords: [] };
+  },
+
   // ---------- Referrals ----------
   async getReferralCandidates(posting_id?: string): Promise<Contact[]> {
     if (!shouldUseMocks()) {
@@ -721,7 +738,7 @@ export const api = {
       body:
 `Dear ${o.professor_name},
 
-I'm Maya Chen, a third-year EECS student at UC Berkeley. I read "${o.recent_paper.title}" (${o.recent_paper.year}) twice — the section on ${o.research_area.toLowerCase()} matches a problem I've been quietly working on.
+I'm Maya Chen, a third-year EECS student at UC Berkeley. ${o.recent_paper ? `I read "${o.recent_paper.title}" (${o.recent_paper.year}) twice — the` : "The"} section on ${o.research_area.toLowerCase()} matches a problem I've been quietly working on.
 
 In rustpad-mini I shipped a small CRDT-backed editor in Rust + WASM; at Replicate I sent 14 inference PRs that cut p95 on a serving path by 38%. That overlap with what the ${o.lab_name} is doing is why I'm writing.
 

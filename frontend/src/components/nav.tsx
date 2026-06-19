@@ -170,7 +170,7 @@ export function Footer() {
           <ul className="space-y-2 text-muted-foreground">
             <li><Link to="/onboarding" className="hover:text-foreground">Build your Career Twin</Link></li>
             <li><Link to="/auth" className="hover:text-foreground">Sign in</Link></li>
-            <li><Link to="/referrals" className="hover:text-foreground">Referrals</Link></li>
+            <li><Link to="/referrals" search={{ posting_id: undefined }} className="hover:text-foreground">Referrals</Link></li>
           </ul>
         </div>
       </div>

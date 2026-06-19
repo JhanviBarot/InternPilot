@@ -215,7 +215,7 @@ function MatchCard({ m }: { m: Match }) {
         <div className="font-mono text-2xl">{Math.round(m.response_likelihood * 100)}%</div>
         <div className="mt-1 text-xs text-muted-foreground">EV <span className="font-mono">{m.expected_value.toFixed(2)}</span></div>
         <div className="mt-4 flex gap-2 justify-end">
-          <Link to="/referrals" className="inline-flex items-center gap-1.5 rounded-full border bg-white px-3 py-1.5 text-xs hover:bg-secondary" style={{ borderColor: "var(--color-hairline)" }}>
+          <Link to="/referrals" search={{ posting_id: m.posting.id }} className="inline-flex items-center gap-1.5 rounded-full border bg-white px-3 py-1.5 text-xs hover:bg-secondary" style={{ borderColor: "var(--color-hairline)" }}>
             <Users className="h-3 w-3" /> Find referral
           </Link>
           <Link to="/assistant" search={{ posting_id: m.posting.id }} className="inline-flex items-center rounded-full bg-primary text-primary-foreground px-3.5 py-1.5 text-xs font-medium hover:bg-[color:var(--primary-hover)]">
@@ -242,9 +242,11 @@ function ResearchCard({ o }: { o: ResearchOpportunity }) {
         </div>
         <p className="mt-3 text-sm text-muted-foreground max-w-2xl">{o.fit_explanation}</p>
         <div className="mt-4 flex flex-wrap items-center gap-2">
-          <span className="inline-flex items-center gap-1.5 rounded-full bg-primary-tint px-2.5 py-1 text-xs font-medium" style={{ color: "var(--color-primary)" }}>
-            <Sparkles className="h-3 w-3" /> Recent: {o.recent_paper.title} ({o.recent_paper.year})
-          </span>
+          {o.recent_paper && (
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-primary-tint px-2.5 py-1 text-xs font-medium" style={{ color: "var(--color-primary)" }}>
+              <Sparkles className="h-3 w-3" /> Recent: {o.recent_paper.title} ({o.recent_paper.year})
+            </span>
+          )}
           {o.matched_skills.slice(0, 3).map((s) => <Pill key={s} tone="primary">{s}</Pill>)}
         </div>
       </div>
