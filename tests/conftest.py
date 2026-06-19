@@ -59,12 +59,14 @@ async def test_engine():
 
     eng = create_async_engine(TEST_DATABASE_URL, echo=False)
 
-    # Tear down any leftover schema from a previous run
+    # Tear down any leftover schema from a previous run.
+    # Drop user tables first, then alembic_version so the next upgrade runs clean.
     async with eng.begin() as conn:
         await conn.run_sync(Base.metadata.drop_all)
+        await conn.execute(text("DROP TABLE IF EXISTS alembic_version"))
 
-    # Bootstrap via Alembic CLI (catches migration drift vs. plain create_all)
-    # subprocess avoids the alembic/ dir shadowing the installed package
+    # Bootstrap via Alembic CLI (catches migration drift vs. plain create_all).
+    # subprocess avoids the alembic/ dir shadowing the installed package.
     result = await asyncio.to_thread(
         subprocess.run,
         ["uv", "run", "alembic", "upgrade", "head"],
@@ -80,6 +82,7 @@ async def test_engine():
 
     async with eng.begin() as conn:
         await conn.run_sync(Base.metadata.drop_all)
+        await conn.execute(text("DROP TABLE IF EXISTS alembic_version"))
     await eng.dispose()
 
 

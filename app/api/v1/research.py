@@ -98,7 +98,7 @@ async def list_research_outreach(
 ) -> dict[str, object]:
     svc = ResearchService(db, current_user.id)
     outreach_list = await svc.list_outreach()
-    return {"data": [ResearchOutreachSchema.model_validate(o).model_dump() for o in outreach_list]}
+    return {"data": [o.model_dump() for o in outreach_list]}
 
 
 # ---------------------------------------------------------------------------

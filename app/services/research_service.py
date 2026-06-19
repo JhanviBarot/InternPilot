@@ -31,8 +31,10 @@ from app.models.profile import Profile
 from app.models.research_opportunity import ResearchOpportunity
 from app.models.research_outreach import OUTREACH_STATUSES, ResearchOutreach
 from app.schemas.research import (
+    OutreachOpportunitySnippet,
     ResearchMatchSchema,
     ResearchOpportunitySchema,
+    ResearchOutreachWithOpportunitySchema,
 )
 from app.services.application_service import _find_unsupported_claims, _grounding_score
 from app.services.base import BaseService
@@ -427,18 +429,34 @@ class ResearchService(BaseService):
     # list_outreach — user-scoped
     # ------------------------------------------------------------------
 
-    async def list_outreach(self) -> list[ResearchOutreach]:
-        return list(
-            (
-                await self.db.execute(
-                    select(ResearchOutreach)
-                    .where(ResearchOutreach.user_id == self.user_id)
-                    .order_by(ResearchOutreach.created_at.desc())
+    async def list_outreach(self) -> list[ResearchOutreachWithOpportunitySchema]:
+        rows = (
+            await self.db.execute(
+                select(ResearchOutreach, ResearchOpportunity)
+                .join(
+                    ResearchOpportunity,
+                    ResearchOutreach.research_opportunity_id == ResearchOpportunity.id,
                 )
+                .where(ResearchOutreach.user_id == self.user_id)
+                .order_by(ResearchOutreach.created_at.desc())
             )
-            .scalars()
-            .all()
-        )
+        ).all()
+        return [
+            ResearchOutreachWithOpportunitySchema(
+                id=o.id,
+                opportunity_id=o.research_opportunity_id,
+                opportunity=OutreachOpportunitySnippet(
+                    professor_name=opp.professor_name,
+                    institution=opp.institution,
+                    lab_name=opp.lab_name,
+                ),
+                status=o.status,
+                pitch_id=o.pitch_artifact_id,
+                last_status_at=o.updated_at,
+                created_at=o.created_at,
+            )
+            for o, opp in rows
+        ]
 
     # ------------------------------------------------------------------
     # update_status — 404 if not owned

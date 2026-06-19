@@ -51,6 +51,7 @@ const delay = (ms = 180) => new Promise<void>((r) => setTimeout(r, ms));
 // ---------------------------------------------------------------------------
 
 const TOKEN_KEY = "internpilot_token";
+const REFRESH_KEY = "internpilot_refresh_token";
 const USER_KEY = "internpilot_user";
 
 export function getToken(): string | null {
@@ -66,6 +67,17 @@ export function setToken(token: string): void {
 export function clearToken(): void {
   if (typeof localStorage === "undefined") return;
   localStorage.removeItem(TOKEN_KEY);
+  localStorage.removeItem(REFRESH_KEY);
+}
+
+function getRefreshToken(): string | null {
+  if (typeof localStorage === "undefined") return null;
+  return localStorage.getItem(REFRESH_KEY);
+}
+
+function setRefreshToken(token: string): void {
+  if (typeof localStorage === "undefined") return;
+  localStorage.setItem(REFRESH_KEY, token);
 }
 
 export function getStoredUser(): User | null {
@@ -130,9 +142,31 @@ async function http<T>(
   if (res.status === 401) {
     const { code, message } = await parseErrBody();
     if (!opts.skipAuthRedirect) {
-      // Only redirect when the user HAD a valid token (session truly expired).
-      // If there was no token they were simply unauthenticated — don't redirect.
       if (token) {
+        // Try a silent refresh before giving up
+        const refreshToken = getRefreshToken();
+        if (refreshToken) {
+          try {
+            const refreshRes = await fetch(`${API_BASE_URL}/auth/refresh`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ refresh_token: refreshToken }),
+            });
+            if (refreshRes.ok) {
+              const { token: newToken } = await refreshRes.json();
+              setToken(newToken);
+              // Retry the original request with the new token
+              const retryHeaders: Record<string, string> = {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${newToken}`,
+                ...(init?.headers as Record<string, string> | undefined),
+              };
+              const retryRes = await fetch(`${API_BASE_URL}${path}`, { ...init, headers: retryHeaders });
+              if (retryRes.status === 204) return undefined as unknown as T;
+              if (retryRes.ok) return retryRes.json();
+            }
+          } catch { /* fall through to redirect */ }
+        }
         clearToken();
         if (typeof window !== "undefined" && !window.location.pathname.startsWith("/auth")) {
           window.location.href = "/auth";
@@ -172,6 +206,7 @@ export async function authSignup(name: string, email: string, password: string):
     { skipAuthRedirect: true },
   );
   setToken(data.token);
+  if (data.refresh_token) setRefreshToken(data.refresh_token);
   storeUser(mapUser(data));
   setGuestMode(false);
   return data;
@@ -184,6 +219,7 @@ export async function authLogin(email: string, password: string): Promise<AuthPa
     { skipAuthRedirect: true },
   );
   setToken(data.token);
+  if (data.refresh_token) setRefreshToken(data.refresh_token);
   storeUser(mapUser(data));
   setGuestMode(false);
   return data;
@@ -444,18 +480,23 @@ function mapResearchPitch(raw: any, opportunity_id: string): ResearchPitch {
   };
 }
 
-// Backend ResearchOutreachSchema = { id, user_id, research_opportunity_id, status, pitch_artifact_id, created_at, updated_at }
-// Frontend ResearchOutreach = { id, opportunity_id, opportunity: {professor_name, institution, lab_name}, status, pitch_id, ... }
+// Backend ResearchOutreachWithOpportunitySchema = { id, opportunity_id, opportunity: {professor_name, institution, lab_name}, status, pitch_id, last_status_at, created_at }
+// Frontend ResearchOutreach = same shape
 function mapResearchOutreach(raw: any): ResearchOutreach {
+  const opp = raw.opportunity ?? {};
   return {
     id: String(raw.id),
-    opportunity_id: String(raw.research_opportunity_id ?? raw.opportunity_id),
-    opportunity: raw.opportunity ?? { professor_name: "", institution: "", lab_name: "" },
+    opportunity_id: String(raw.opportunity_id ?? raw.research_opportunity_id),
+    opportunity: {
+      professor_name: opp.professor_name ?? "",
+      institution: opp.institution ?? "",
+      lab_name: opp.lab_name ?? "",
+    },
     status: (raw.status as ResearchOutreachStatus) ?? "suggested",
-    pitch_id: raw.pitch_artifact_id ? String(raw.pitch_artifact_id) : null,
+    pitch_id: raw.pitch_id ? String(raw.pitch_id) : (raw.pitch_artifact_id ? String(raw.pitch_artifact_id) : null),
     contacted_at: raw.contacted_at ?? null,
     replied_at: raw.replied_at ?? null,
-    last_status_at: raw.updated_at ?? raw.last_status_at ?? new Date().toISOString(),
+    last_status_at: raw.last_status_at ?? raw.updated_at ?? new Date().toISOString(),
   };
 }
 

@@ -40,6 +40,8 @@ export type Profile = {
 
 export type CompanySummary = { id: string; name: string; domain: string };
 
+export type PostingStatus = "active" | "stale";
+
 export type Posting = {
   id: string;
   company: CompanySummary;
@@ -47,13 +49,13 @@ export type Posting = {
   description: string;
   requirements: string[];
   location: string;
-  work_mode: "remote" | "onsite" | "hybrid";
+  work_mode: "remote" | "onsite" | "hybrid" | "any";
   stipend: number;
   source: string;
   source_url: string;
   posted_at: string;
   last_seen_at: string;
-  status: "open" | "closed";
+  status: PostingStatus;
   ghost_score: number;
   is_ghost: boolean;
 };
@@ -71,10 +73,12 @@ export type Match = {
   created_at: string;
 };
 
+export type ArtifactType = "resume" | "cover_letter" | "email" | "followup" | "referral_intro" | "research_pitch";
+
 export type Artifact = {
   id: string;
   application_id: string;
-  type: "resume" | "cover" | "email" | "research_pitch";
+  type: ArtifactType;
   content: string;
   ats_score: number;
   missing_keywords: string[];
@@ -88,11 +92,13 @@ export type ApplicationStatus =
   | "saved" | "applied" | "viewed" | "responded"
   | "interview" | "offer" | "rejected" | "ghosted";
 
+export type Channel = "portal" | "email" | "referral";
+
 export type Application = {
   id: string;
   posting_id: string;
   posting: { id: string; title: string; company_name: string };
-  channel: "direct" | "referral" | "platform";
+  channel: Channel;
   status: ApplicationStatus;
   artifacts: Artifact[];
   predicted_response_prob: number;
@@ -113,12 +119,14 @@ export type Contact = {
   relationship: "alumni" | "second_degree" | "unknown";
 };
 
+export type ReferralStatus = "suggested" | "requested" | "accepted" | "declined" | "no_response";
+
 export type Referral = {
   id: string;
   posting_id: string;
   company_id: string;
   contact: Contact;
-  status: "suggested" | "drafted" | "sent" | "responded";
+  status: ReferralStatus;
   intro_artifact_id: string | null;
   created_at: string;
 };
@@ -135,9 +143,11 @@ export type DashboardSummary = {
   iq_trend: { date: string; value: number }[];
 };
 
+export type NotificationType = "followup_due" | "status_change" | "new_match" | "response" | "prep_ready";
+
 export type Notification = {
   id: string;
-  type: "match" | "ghost" | "referral" | "interview" | "system";
+  type: NotificationType;
   content: string;
   read: boolean;
   created_at: string;
@@ -155,7 +165,7 @@ export type ResearchOpportunity = {
   matched_skills: string[];
   fit_explanation: string;
   professor_email: string;
-  recent_paper: { title: string; year: number };
+  recent_paper?: { title: string; year: number };
   region: string;
 };
 
@@ -244,14 +254,14 @@ const C = {
 const today = "2026-06-15";
 
 export const postings: Posting[] = [
-  { id: "p_1", company: C.linear, title: "Software Engineer Intern, Editor", description: "Work on the collaborative editor at the heart of Linear.", requirements: ["TypeScript", "React", "CRDTs"], location: "San Francisco", work_mode: "hybrid", stipend: 9500, source: "linear/careers", source_url: "https://linear.app/careers", posted_at: "2026-06-02", last_seen_at: today, status: "open", ghost_score: 0.08, is_ghost: false },
-  { id: "p_2", company: C.anthropic, title: "Research Engineer Intern, Inference", description: "Optimize serving pipelines for frontier models.", requirements: ["Python", "CUDA", "Distributed systems"], location: "San Francisco", work_mode: "onsite", stipend: 11000, source: "anthropic/careers", source_url: "https://www.anthropic.com/careers", posted_at: "2026-06-08", last_seen_at: today, status: "open", ghost_score: 0.05, is_ghost: false },
-  { id: "p_3", company: C.stripe, title: "Software Engineer Intern, Issuing", description: "Build merchant tools on the issuing platform.", requirements: ["Ruby", "Postgres"], location: "New York", work_mode: "hybrid", stipend: 9800, source: "stripe/jobs", source_url: "https://stripe.com/jobs", posted_at: "2026-05-29", last_seen_at: today, status: "open", ghost_score: 0.18, is_ghost: false },
-  { id: "p_4", company: C.vercel, title: "Frontend Intern, Dashboard", description: "Ship the developer dashboard end to end.", requirements: ["React", "Next.js"], location: "Remote", work_mode: "remote", stipend: 8500, source: "vercel/careers", source_url: "https://vercel.com/careers", posted_at: "2026-04-11", last_seen_at: "2026-05-02", status: "open", ghost_score: 0.78, is_ghost: true },
-  { id: "p_5", company: C.ramp, title: "Software Engineer Intern, Platform", description: "Internal platform team work.", requirements: ["TypeScript", "Postgres"], location: "New York", work_mode: "hybrid", stipend: 10500, source: "ramp/careers", source_url: "https://ramp.com/careers", posted_at: "2026-06-10", last_seen_at: today, status: "open", ghost_score: 0.11, is_ghost: false },
-  { id: "p_6", company: C.notion, title: "Software Engineer Intern, AI", description: "Build features on the AI surface inside Notion.", requirements: ["TypeScript", "LLMs"], location: "San Francisco", work_mode: "hybrid", stipend: 9200, source: "notion/careers", source_url: "https://www.notion.so/careers", posted_at: "2026-06-05", last_seen_at: today, status: "open", ghost_score: 0.13, is_ghost: false },
-  { id: "p_7", company: C.figma, title: "Design Engineer Intern", description: "Bridge design + code on the Figma surface.", requirements: ["React", "Design systems"], location: "San Francisco", work_mode: "hybrid", stipend: 9000, source: "figma/careers", source_url: "https://www.figma.com/careers", posted_at: "2026-03-20", last_seen_at: "2026-05-01", status: "open", ghost_score: 0.66, is_ghost: true },
-  { id: "p_8", company: C.arc, title: "Browser Intern, Web Platform", description: "Work on the surface of a new kind of browser.", requirements: ["TypeScript", "Web platform"], location: "Remote", work_mode: "remote", stipend: 8800, source: "thebrowser/careers", source_url: "https://thebrowser.company/careers", posted_at: "2026-06-12", last_seen_at: today, status: "open", ghost_score: 0.09, is_ghost: false },
+  { id: "p_1", company: C.linear, title: "Software Engineer Intern, Editor", description: "Work on the collaborative editor at the heart of Linear.", requirements: ["TypeScript", "React", "CRDTs"], location: "San Francisco", work_mode: "hybrid", stipend: 9500, source: "linear/careers", source_url: "https://linear.app/careers", posted_at: "2026-06-02", last_seen_at: today, status: "active", ghost_score: 0.08, is_ghost: false },
+  { id: "p_2", company: C.anthropic, title: "Research Engineer Intern, Inference", description: "Optimize serving pipelines for frontier models.", requirements: ["Python", "CUDA", "Distributed systems"], location: "San Francisco", work_mode: "onsite", stipend: 11000, source: "anthropic/careers", source_url: "https://www.anthropic.com/careers", posted_at: "2026-06-08", last_seen_at: today, status: "active", ghost_score: 0.05, is_ghost: false },
+  { id: "p_3", company: C.stripe, title: "Software Engineer Intern, Issuing", description: "Build merchant tools on the issuing platform.", requirements: ["Ruby", "Postgres"], location: "New York", work_mode: "hybrid", stipend: 9800, source: "stripe/jobs", source_url: "https://stripe.com/jobs", posted_at: "2026-05-29", last_seen_at: today, status: "active", ghost_score: 0.18, is_ghost: false },
+  { id: "p_4", company: C.vercel, title: "Frontend Intern, Dashboard", description: "Ship the developer dashboard end to end.", requirements: ["React", "Next.js"], location: "Remote", work_mode: "remote", stipend: 8500, source: "vercel/careers", source_url: "https://vercel.com/careers", posted_at: "2026-04-11", last_seen_at: "2026-05-02", status: "stale", ghost_score: 0.78, is_ghost: true },
+  { id: "p_5", company: C.ramp, title: "Software Engineer Intern, Platform", description: "Internal platform team work.", requirements: ["TypeScript", "Postgres"], location: "New York", work_mode: "hybrid", stipend: 10500, source: "ramp/careers", source_url: "https://ramp.com/careers", posted_at: "2026-06-10", last_seen_at: today, status: "active", ghost_score: 0.11, is_ghost: false },
+  { id: "p_6", company: C.notion, title: "Software Engineer Intern, AI", description: "Build features on the AI surface inside Notion.", requirements: ["TypeScript", "LLMs"], location: "San Francisco", work_mode: "hybrid", stipend: 9200, source: "notion/careers", source_url: "https://www.notion.so/careers", posted_at: "2026-06-05", last_seen_at: today, status: "active", ghost_score: 0.13, is_ghost: false },
+  { id: "p_7", company: C.figma, title: "Design Engineer Intern", description: "Bridge design + code on the Figma surface.", requirements: ["React", "Design systems"], location: "San Francisco", work_mode: "hybrid", stipend: 9000, source: "figma/careers", source_url: "https://www.figma.com/careers", posted_at: "2026-03-20", last_seen_at: "2026-05-01", status: "stale", ghost_score: 0.66, is_ghost: true },
+  { id: "p_8", company: C.arc, title: "Browser Intern, Web Platform", description: "Work on the surface of a new kind of browser.", requirements: ["TypeScript", "Web platform"], location: "Remote", work_mode: "remote", stipend: 8800, source: "thebrowser/careers", source_url: "https://thebrowser.company/careers", posted_at: "2026-06-12", last_seen_at: today, status: "active", ghost_score: 0.09, is_ghost: false },
 ];
 
 const findPosting = (id: string) => postings.find(p => p.id === id)!;
@@ -274,14 +284,14 @@ const artifact = (id: string, app_id: string, type: Artifact["type"], content: s
 });
 
 export const applications: Application[] = [
-  { id: "a_1", posting_id: "p_2", posting: { id: "p_2", title: "Research Engineer Intern, Inference", company_name: "Anthropic" }, channel: "referral", status: "interview", artifacts: [artifact("art_1", "a_1", "resume", "resume contents"), artifact("art_2", "a_1", "cover", "cover contents")], predicted_response_prob: 0.42, applied_at: "2026-06-04", last_status_at: "2026-06-12" },
+  { id: "a_1", posting_id: "p_2", posting: { id: "p_2", title: "Research Engineer Intern, Inference", company_name: "Anthropic" }, channel: "referral", status: "interview", artifacts: [artifact("art_1", "a_1", "resume", "resume contents"), artifact("art_2", "a_1", "cover_letter", "cover contents")], predicted_response_prob: 0.42, applied_at: "2026-06-04", last_status_at: "2026-06-12" },
   { id: "a_2", posting_id: "p_1", posting: { id: "p_1", title: "Software Engineer Intern, Editor", company_name: "Linear" }, channel: "referral", status: "responded", artifacts: [artifact("art_3", "a_2", "email", "intro contents")], predicted_response_prob: 0.51, applied_at: "2026-06-06", last_status_at: "2026-06-10" },
-  { id: "a_3", posting_id: "p_5", posting: { id: "p_5", title: "Software Engineer Intern, Platform", company_name: "Ramp" }, channel: "direct", status: "applied", artifacts: [artifact("art_4", "a_3", "resume", "resume contents")], predicted_response_prob: 0.32, applied_at: "2026-06-09", last_status_at: "2026-06-09" },
-  { id: "a_4", posting_id: "p_8", posting: { id: "p_8", title: "Browser Intern, Web Platform", company_name: "The Browser Co." }, channel: "platform", status: "viewed", artifacts: [], predicted_response_prob: 0.28, applied_at: "2026-06-10", last_status_at: "2026-06-13" },
-  { id: "a_5", posting_id: "p_6", posting: { id: "p_6", title: "Software Engineer Intern, AI", company_name: "Notion" }, channel: "direct", status: "saved", artifacts: [], predicted_response_prob: 0.24, applied_at: "", last_status_at: "2026-06-11" },
-  { id: "a_6", posting_id: "p_3", posting: { id: "p_3", title: "Software Engineer Intern, Issuing", company_name: "Stripe" }, channel: "direct", status: "ghosted", artifacts: [artifact("art_5", "a_6", "resume", "resume contents")], predicted_response_prob: 0.14, applied_at: "2026-05-01", last_status_at: "2026-05-29", outcome: "ghosted" },
-  { id: "a_7", posting_id: "p_4", posting: { id: "p_4", title: "Frontend Intern, Dashboard", company_name: "Vercel" }, channel: "direct", status: "offer", artifacts: [artifact("art_6", "a_7", "resume", "resume contents")], predicted_response_prob: 0.41, applied_at: "2026-04-21", last_status_at: "2026-06-08", outcome: "offer" },
-  { id: "a_8", posting_id: "p_7", posting: { id: "p_7", title: "Design Engineer Intern", company_name: "Figma" }, channel: "direct", status: "rejected", artifacts: [artifact("art_7", "a_8", "resume", "resume contents")], predicted_response_prob: 0.18, applied_at: "2026-04-30", last_status_at: "2026-05-22", outcome: "rejected" },
+  { id: "a_3", posting_id: "p_5", posting: { id: "p_5", title: "Software Engineer Intern, Platform", company_name: "Ramp" }, channel: "portal", status: "applied", artifacts: [artifact("art_4", "a_3", "resume", "resume contents")], predicted_response_prob: 0.32, applied_at: "2026-06-09", last_status_at: "2026-06-09" },
+  { id: "a_4", posting_id: "p_8", posting: { id: "p_8", title: "Browser Intern, Web Platform", company_name: "The Browser Co." }, channel: "email", status: "viewed", artifacts: [], predicted_response_prob: 0.28, applied_at: "2026-06-10", last_status_at: "2026-06-13" },
+  { id: "a_5", posting_id: "p_6", posting: { id: "p_6", title: "Software Engineer Intern, AI", company_name: "Notion" }, channel: "portal", status: "saved", artifacts: [], predicted_response_prob: 0.24, applied_at: "", last_status_at: "2026-06-11" },
+  { id: "a_6", posting_id: "p_3", posting: { id: "p_3", title: "Software Engineer Intern, Issuing", company_name: "Stripe" }, channel: "portal", status: "ghosted", artifacts: [artifact("art_5", "a_6", "resume", "resume contents")], predicted_response_prob: 0.14, applied_at: "2026-05-01", last_status_at: "2026-05-29", outcome: "ghosted" },
+  { id: "a_7", posting_id: "p_4", posting: { id: "p_4", title: "Frontend Intern, Dashboard", company_name: "Vercel" }, channel: "portal", status: "offer", artifacts: [artifact("art_6", "a_7", "resume", "resume contents")], predicted_response_prob: 0.41, applied_at: "2026-04-21", last_status_at: "2026-06-08", outcome: "offer" },
+  { id: "a_8", posting_id: "p_7", posting: { id: "p_7", title: "Design Engineer Intern", company_name: "Figma" }, channel: "portal", status: "rejected", artifacts: [artifact("art_7", "a_8", "resume", "resume contents")], predicted_response_prob: 0.18, applied_at: "2026-04-30", last_status_at: "2026-05-22", outcome: "rejected" },
 ];
 
 export const contacts: Contact[] = [
@@ -292,7 +302,7 @@ export const contacts: Contact[] = [
 
 export const referrals: Referral[] = [
   { id: "r_1", posting_id: "p_1", company_id: "c_linear", contact: contacts[0], status: "suggested", intro_artifact_id: null, created_at: today },
-  { id: "r_2", posting_id: "p_1", company_id: "c_linear", contact: contacts[1], status: "drafted", intro_artifact_id: "art_intro_1", created_at: today },
+  { id: "r_2", posting_id: "p_1", company_id: "c_linear", contact: contacts[1], status: "requested", intro_artifact_id: "art_intro_1", created_at: today },
   { id: "r_3", posting_id: "p_1", company_id: "c_linear", contact: contacts[2], status: "suggested", intro_artifact_id: null, created_at: today },
 ];
 
@@ -310,9 +320,9 @@ export const dashboardSummary: DashboardSummary = {
 };
 
 export const notifications: Notification[] = [
-  { id: "n_1", type: "match", content: "New 94% match — Linear, Editor team", read: false, created_at: "2026-06-15T13:00:00Z" },
-  { id: "n_2", type: "ghost", content: "We filtered 4 likely-ghost roles for you today", read: false, created_at: "2026-06-15T09:00:00Z" },
-  { id: "n_3", type: "referral", content: "Priya Raman accepted your intro request", read: true, created_at: "2026-06-14T17:00:00Z" },
+  { id: "n_1", type: "new_match", content: "New 94% match — Linear, Editor team", read: false, created_at: "2026-06-15T13:00:00Z" },
+  { id: "n_2", type: "status_change", content: "We filtered 4 likely-ghost roles for you today", read: false, created_at: "2026-06-15T09:00:00Z" },
+  { id: "n_3", type: "response", content: "Priya Raman accepted your intro request", read: true, created_at: "2026-06-14T17:00:00Z" },
 ];
 
 // ============= Research data =============

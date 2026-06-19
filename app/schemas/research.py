@@ -34,6 +34,12 @@ class ResearchMatchSchema(BaseModel):
     missing_skills: list[str]
 
 
+class OutreachOpportunitySnippet(BaseModel):
+    professor_name: str
+    institution: str
+    lab_name: str | None
+
+
 class ResearchOutreachSchema(BaseModel):
     id: uuid.UUID
     user_id: uuid.UUID
@@ -44,6 +50,16 @@ class ResearchOutreachSchema(BaseModel):
     updated_at: datetime
 
     model_config = {"from_attributes": True}
+
+
+class ResearchOutreachWithOpportunitySchema(BaseModel):
+    id: uuid.UUID
+    opportunity_id: uuid.UUID
+    opportunity: OutreachOpportunitySnippet
+    status: str
+    pitch_id: uuid.UUID | None
+    last_status_at: datetime
+    created_at: datetime
 
 
 class PitchRequest(BaseModel):

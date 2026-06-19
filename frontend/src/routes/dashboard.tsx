@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { useState, useEffect } from "react";
 import { CalmBackground } from "@/components/live-background";
 import { Nav } from "@/components/nav";
 import { api, useApi } from "@/lib/api-client";
@@ -30,7 +31,15 @@ function Dashboard() {
   );
 }
 
-function DashboardInner({ d, notifications }: { d: DashboardSummary; notifications: Notification[] }) {
+function DashboardInner({ d, notifications: initialNotifications }: { d: DashboardSummary; notifications: Notification[] }) {
+  const [notifications, setNotifications] = useState<Notification[]>(initialNotifications);
+  useEffect(() => { setNotifications(initialNotifications); }, [initialNotifications]);
+
+  const markRead = async (id: string) => {
+    setNotifications((prev) => prev.map((n) => n.id === id ? { ...n, read: true } : n));
+    try { await api.markNotificationRead(id); } catch { /* revert on failure */ setNotifications((prev) => prev.map((n) => n.id === id ? { ...n, read: false } : n)); }
+  };
+
   const unread = notifications.filter((x) => !x.read).length;
   return (
     <>
@@ -105,7 +114,7 @@ function DashboardInner({ d, notifications }: { d: DashboardSummary; notificatio
               <li key={n.id} className="flex items-start gap-3">
                 <span
                   className="mt-1.5 h-1.5 w-1.5 rounded-full"
-                  style={{ background: n.type === "ghost" ? "var(--color-ghost)" : "var(--color-primary)", opacity: n.read ? 0.4 : 1 }}
+                  style={{ background: (n.type === "status_change" || n.type === "followup_due") ? "var(--color-ghost)" : "var(--color-primary)", opacity: n.read ? 0.4 : 1 }}
                 />
                 <div className="flex-1">
                   <div className={`text-sm ${n.read ? "text-muted-foreground" : ""}`}>{n.content}</div>
@@ -115,7 +124,7 @@ function DashboardInner({ d, notifications }: { d: DashboardSummary; notificatio
                 </div>
                 {!n.read && (
                   <button
-                    onClick={() => api.markNotificationRead(n.id)}
+                    onClick={() => markRead(n.id)}
                     className="text-[10px] uppercase tracking-[0.16em] text-muted-foreground hover:text-foreground"
                   >
                     mark read

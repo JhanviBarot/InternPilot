@@ -78,8 +78,12 @@ function PitchInner({ o }: { o: ResearchOpportunity }) {
           <p className="mt-2 text-sm">{o.research_area}</p>
           <div className="mt-4 text-xs uppercase tracking-[0.14em] text-muted-foreground">Why you fit</div>
           <p className="mt-2 text-sm text-muted-foreground leading-relaxed">{o.fit_explanation}</p>
-          <div className="mt-4 text-xs uppercase tracking-[0.14em] text-muted-foreground">Recent paper</div>
-          <p className="mt-2 text-sm italic">"{o.recent_paper.title}" ({o.recent_paper.year})</p>
+          {o.recent_paper && (
+            <>
+              <div className="mt-4 text-xs uppercase tracking-[0.14em] text-muted-foreground">Recent paper</div>
+              <p className="mt-2 text-sm italic">"{o.recent_paper.title}" ({o.recent_paper.year})</p>
+            </>
+          )}
         </div>
       </aside>
 

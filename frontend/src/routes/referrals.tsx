@@ -86,7 +86,7 @@ function Referrals() {
                 <div className="mt-6 flex justify-end gap-2">
                   <button className="rounded-full border bg-white px-4 py-2 text-xs hover:bg-secondary" style={{ borderColor: "var(--color-hairline)" }}>Tweak draft</button>
                   <button
-                    onClick={() => api.setReferralStatus(data[0].id, "sent")}
+                    onClick={() => api.setReferralStatus(data[0].id, "requested")}
                     className="inline-flex items-center gap-1.5 rounded-full bg-primary text-primary-foreground px-4 py-2 text-xs font-medium hover:bg-[color:var(--primary-hover)]"
                   >
                     <Send className="h-3.5 w-3.5" /> Send intro request
