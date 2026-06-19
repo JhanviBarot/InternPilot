@@ -40,6 +40,7 @@ class MatchListResponse(BaseModel):
     page: int
     limit: int
     total: int
+    fetching: bool = False   # True when a background live-fetch is in progress
 
 
 class SkillGapItem(BaseModel):

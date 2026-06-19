@@ -580,14 +580,14 @@ export const api = {
   },
 
   // ---------- Matches ----------
-  async getMatches(includeGhosts = false): Promise<Match[]> {
+  async getMatches(includeGhosts = false): Promise<{ items: Match[]; fetching: boolean }> {
     if (!shouldUseMocks()) {
       const url = includeGhosts ? "/matches?include_ghosts=true" : "/matches";
       const raw = await http<any>(url);
       const items: any[] = raw?.data ?? (Array.isArray(raw) ? raw : []);
-      return items.map(mapMatch);
+      return { items: items.map(mapMatch), fetching: raw?.fetching ?? false };
     }
-    await delay(); return matches;
+    await delay(); return { items: matches, fetching: false };
   },
   async getMatch(posting_id: string): Promise<Match | undefined> {
     if (!shouldUseMocks()) {

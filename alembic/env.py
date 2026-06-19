@@ -17,6 +17,7 @@ from app.core.config import settings
 from app.models.application import Application  # noqa: F401
 from app.models.artifact import Artifact  # noqa: F401
 from app.models.base import Base
+from app.models.interest_search_cache import InterestSearchCache  # noqa: F401
 from app.models.company import Company  # noqa: F401
 from app.models.contact import Contact  # noqa: F401
 from app.models.evaluation import Evaluation  # noqa: F401

@@ -1,5 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { CalmBackground } from "@/components/live-background";
 import { Nav } from "@/components/nav";
 import { api, useApi } from "@/lib/api-client";
@@ -113,10 +113,20 @@ function CompanyFeed() {
   const [selectedModes, setSelectedModes] = useState<string[]>([]);
   const { data, loading, error, reload } = useApi(() => api.getMatches(!hideGhosts), [hideGhosts]);
 
+  const fetching = data?.fetching ?? false;
+
+  // Auto-retry after 45 s when a live fetch is in progress so matches appear
+  // without the user having to refresh manually.
+  useEffect(() => {
+    if (!fetching) return;
+    const t = setTimeout(reload, 45_000);
+    return () => clearTimeout(t);
+  }, [fetching, reload]);
+
   const toggleMode = (m: string) =>
     setSelectedModes((prev) => prev.includes(m) ? prev.filter((x) => x !== m) : [...prev, m]);
 
-  const all = data ?? [];
+  const all = data?.items ?? [];
   const ghostsHidden = all.filter((m) => m.is_ghost).length;
   const list = all
     .filter((m) => (hideGhosts ? !m.is_ghost : true))
@@ -172,6 +182,22 @@ function CompanyFeed() {
             <SlidersHorizontal className="h-4 w-4" /> Re-rank
           </button>
         </div>
+
+        {/* Live fetch in-progress banner */}
+        {!loading && fetching && (
+          <div className="mt-4 flex items-center gap-3 rounded-xl border p-4"
+               style={{ borderColor: "color-mix(in oklab, var(--color-primary) 35%, transparent)", background: "color-mix(in oklab, var(--color-primary) 6%, white)" }}>
+            <Sparkles className="h-5 w-5 shrink-0 animate-pulse" style={{ color: "var(--color-primary)" }} />
+            <div>
+              <div className="font-medium text-sm" style={{ color: "var(--color-primary)" }}>
+                Fetching live internships for your interests...
+              </div>
+              <div className="text-xs text-muted-foreground mt-0.5">
+                We're searching across platforms right now. Fresh matches will appear in ~60 seconds.
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Profile completeness banner — shown when no match scores yet */}
         {!loading && list.length > 0 && list.every((m) => m.match_score === 0) && (
