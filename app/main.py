@@ -92,10 +92,11 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# CORS — allow v0 frontend origin(s) from env
+# CORS — allow configured origins + all Cloudflare Pages preview deployments
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins_list,
+    allow_origin_regex=r"https://[a-z0-9]+\.internpilot\.pages\.dev",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
