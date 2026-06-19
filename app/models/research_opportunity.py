@@ -33,6 +33,8 @@ class ResearchOpportunity(Base, TimestampMixin):
     )
     posted_at: Mapped[datetime | None] = mapped_column(UTCDateTime, nullable=True)
     last_seen_at: Mapped[datetime] = mapped_column(UTCDateTime, nullable=False)
+    # Optional recent paper — populated by the live data pipeline via arXiv
+    recent_paper: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True, default=None)
     # Internal — excluded from API responses
     embedding: Mapped[list[float] | None] = mapped_column(
         Vector(EMBEDDING_DIM), nullable=True, default=None

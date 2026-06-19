@@ -41,11 +41,12 @@ function DashboardInner({ d, notifications: initialNotifications }: { d: Dashboa
   };
 
   const unread = notifications.filter((x) => !x.read).length;
+  const weekLabel = d.iq_trend.length > 0 ? `Week ${d.iq_trend.length}` : "Dashboard";
   return (
     <>
       <div className="flex items-end justify-between">
         <div>
-          <div className="text-xs uppercase tracking-[0.18em] text-muted-foreground font-mono">Week 8</div>
+          <div className="text-xs uppercase tracking-[0.18em] text-muted-foreground font-mono">{weekLabel}</div>
           <h1 className="mt-2 font-display text-5xl md:text-6xl tracking-tight">The curve is bending.</h1>
         </div>
         <button className="hidden md:inline-flex items-center gap-2 rounded-full border bg-white px-3 py-1.5 text-xs hover:bg-secondary" style={{ borderColor: "var(--color-hairline)" }}>

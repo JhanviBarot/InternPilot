@@ -6,6 +6,11 @@ from datetime import datetime
 from pydantic import BaseModel
 
 
+class RecentPaper(BaseModel):
+    title: str
+    year: int
+
+
 class ResearchOpportunitySchema(BaseModel):
     id: uuid.UUID
     professor_name: str
@@ -22,6 +27,7 @@ class ResearchOpportunitySchema(BaseModel):
     posted_at: datetime | None
     last_seen_at: datetime
     created_at: datetime
+    recent_paper: RecentPaper | None = None
 
     model_config = {"from_attributes": True}
 

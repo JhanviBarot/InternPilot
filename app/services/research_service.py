@@ -32,6 +32,7 @@ from app.models.research_opportunity import ResearchOpportunity
 from app.models.research_outreach import OUTREACH_STATUSES, ResearchOutreach
 from app.schemas.research import (
     OutreachOpportunitySnippet,
+    RecentPaper,
     ResearchMatchSchema,
     ResearchOpportunitySchema,
     ResearchOutreachWithOpportunitySchema,
@@ -48,6 +49,12 @@ GROUNDING_THRESHOLD: float = 0.7
 
 
 def _coerce_opportunity(opp: ResearchOpportunity) -> ResearchOpportunitySchema:
+    recent_paper: RecentPaper | None = None
+    if isinstance(opp.recent_paper, dict) and opp.recent_paper.get("title"):
+        recent_paper = RecentPaper(
+            title=str(opp.recent_paper["title"]),
+            year=int(opp.recent_paper.get("year", 0)),
+        )
     return ResearchOpportunitySchema(
         id=opp.id,
         professor_name=opp.professor_name,
@@ -64,6 +71,7 @@ def _coerce_opportunity(opp: ResearchOpportunity) -> ResearchOpportunitySchema:
         posted_at=opp.posted_at,
         last_seen_at=opp.last_seen_at,
         created_at=opp.created_at,
+        recent_paper=recent_paper,
     )
 
 

@@ -450,7 +450,7 @@ function mapResearchOpportunity(raw: any): ResearchOpportunity {
     matched_skills: raw.matched_skills ?? opp.desired_skills ?? [],
     fit_explanation: raw.fit_explanation ?? "",
     professor_email: opp.contact_email ?? "",
-    recent_paper: opp.recent_paper ?? { title: "", year: 0 },
+    recent_paper: opp.recent_paper?.title ? opp.recent_paper : undefined,
     region: opp.region ?? raw.region ?? "",
   };
 }

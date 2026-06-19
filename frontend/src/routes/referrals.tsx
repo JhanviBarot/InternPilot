@@ -4,7 +4,7 @@ import { Nav } from "@/components/nav";
 import { api, useApi } from "@/lib/api-client";
 import { Pill } from "@/components/ui-bits";
 import { LoadingState, ErrorState, EmptyState } from "@/components/data-states";
-import { Send, Linkedin } from "lucide-react";
+import { Send, Linkedin, RefreshCw } from "lucide-react";
 import type { Contact, Referral } from "@/lib/mocks";
 
 export const Route = createFileRoute("/referrals")({
@@ -14,6 +14,71 @@ export const Route = createFileRoute("/referrals")({
   head: () => ({ meta: [{ title: "Referrals — InternPilot" }, { name: "description", content: "Warm intros instead of cold applies." }] }),
   component: Referrals,
 });
+
+function IntroDraftPanel({ contact, referral }: { contact: Contact; referral: Referral | undefined }) {
+  // Load the generated intro artifact if one exists
+  const { data: artifact, loading: artLoading } = useApi(
+    () => referral?.intro_artifact_id ? api.getArtifact(referral.intro_artifact_id) : Promise.resolve(undefined),
+    [referral?.intro_artifact_id],
+  );
+
+  const introContent = artifact?.content;
+
+  return (
+    <div className="card-soft p-8">
+      <div className="text-xs uppercase tracking-[0.14em] text-muted-foreground font-mono">
+        Drafted intro · {contact.name}
+      </div>
+      <h2 className="mt-2 font-display text-2xl">
+        Subject: Your school → {contact.company_name} team
+      </h2>
+
+      {artLoading ? (
+        <div className="mt-5 flex items-center gap-2 text-sm text-muted-foreground">
+          <RefreshCw className="h-3.5 w-3.5 animate-spin" /> Loading draft…
+        </div>
+      ) : introContent ? (
+        <div
+          className="mt-5 leading-relaxed text-[15px] font-display whitespace-pre-wrap"
+          contentEditable
+          suppressContentEditableWarning
+        >
+          {introContent}
+        </div>
+      ) : (
+        <div className="mt-5 leading-relaxed text-[15px] font-display space-y-3">
+          <p>Hi {contact.name.split(" ")[0]},</p>
+          <p>
+            I noticed you work at {contact.company_name} — I&apos;m a student who just came across
+            a role there and wanted to reach out. I&apos;d love to learn more about your experience
+            on the team and whether you&apos;d be open to a quick 15-minute chat.
+          </p>
+          <p>
+            Happy to share my resume and a short project demo upfront if that&apos;s
+            more useful than coffee.
+          </p>
+          <p>Thanks so much either way.</p>
+        </div>
+      )}
+
+      <div className="mt-6 flex justify-end gap-2">
+        <button
+          className="rounded-full border bg-white px-4 py-2 text-xs hover:bg-secondary"
+          style={{ borderColor: "var(--color-hairline)" }}
+        >
+          Tweak draft
+        </button>
+        <button
+          onClick={() => referral && api.setReferralStatus(referral.id, "requested")}
+          disabled={!referral}
+          className="inline-flex items-center gap-1.5 rounded-full bg-primary text-primary-foreground px-4 py-2 text-xs font-medium hover:bg-[color:var(--primary-hover)] disabled:opacity-60"
+        >
+          <Send className="h-3.5 w-3.5" /> Send intro request
+        </button>
+      </div>
+    </div>
+  );
+}
 
 const relationshipLabel: Record<Contact["relationship"], string> = {
   alumni: "alum",
@@ -101,33 +166,10 @@ function Referrals() {
               </div>
 
               {firstContact && (
-                <div className="card-soft p-8">
-                  <div className="text-xs uppercase tracking-[0.14em] text-muted-foreground font-mono">Drafted intro · {firstContact.name}</div>
-                  <h2 className="mt-2 font-display text-2xl">Subject: Berkeley → {firstContact.company_name} team</h2>
-                  <div className="mt-5 leading-relaxed text-[15px] font-display" contentEditable suppressContentEditableWarning>
-                    <p>Hi {firstContact.name.split(" ")[0]},</p>
-                    <p className="mt-3">
-                      Maya from Berkeley — also EECS, also obsessed with text editors. I&apos;ve been shipping a CRDT-backed editor in Rust + WASM
-                      (<em>rustpad-mini</em>) and I noticed {firstContact.company_name} is hiring an editor intern.
-                    </p>
-                    <p className="mt-3">
-                      I don&apos;t want to dump a cold application on the team — would you be open to a quick 15-min chat? Happy to send a short
-                      project demo first if it&apos;d be more useful than coffee.
-                    </p>
-                    <p className="mt-3">Thanks either way.</p>
-                    <p className="mt-3">— Maya</p>
-                  </div>
-                  <div className="mt-6 flex justify-end gap-2">
-                    <button className="rounded-full border bg-white px-4 py-2 text-xs hover:bg-secondary" style={{ borderColor: "var(--color-hairline)" }}>Tweak draft</button>
-                    <button
-                      onClick={() => activeReferral && api.setReferralStatus(activeReferral.id, "requested")}
-                      disabled={!activeReferral}
-                      className="inline-flex items-center gap-1.5 rounded-full bg-primary text-primary-foreground px-4 py-2 text-xs font-medium hover:bg-[color:var(--primary-hover)] disabled:opacity-60"
-                    >
-                      <Send className="h-3.5 w-3.5" /> Send intro request
-                    </button>
-                  </div>
-                </div>
+                <IntroDraftPanel
+                  contact={firstContact}
+                  referral={activeReferral}
+                />
               )}
             </div>
           )}
