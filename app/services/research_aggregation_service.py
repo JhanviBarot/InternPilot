@@ -37,6 +37,20 @@ from app.sources.base import RawPosting
 logger = logging.getLogger(__name__)
 
 TTL_HOURS = 72          # research postings change slower than company roles
+
+
+def _extract_int_array(text: str) -> list[int] | None:
+    """Robustly extract a JSON integer array from LLM output."""
+    for pattern in (r"\[[\d\s,]*\]", r"\[.*?\]"):
+        m = re.search(pattern, text, re.DOTALL)
+        if m:
+            try:
+                parsed = json.loads(m.group())
+                if isinstance(parsed, list):
+                    return [int(x) for x in parsed if isinstance(x, (int, float)) and int(x) == x]
+            except (json.JSONDecodeError, ValueError):
+                continue
+    return None
 MAX_TERMS = 5
 LLM_BATCH = 12          # postings per Mistral call — keeps token count bounded
 
@@ -207,7 +221,7 @@ def research_basic_filter(
 # Mistral relevance gate
 # ---------------------------------------------------------------------------
 
-async def _mistral_complete(messages: list[dict]) -> str:
+async def _mistral_complete(messages: list[dict[str, str]]) -> str:
     """Calls Mistral open-mistral-7b directly; falls back to LLM router."""
     from app.core.config import settings
 
@@ -231,7 +245,7 @@ async def _mistral_complete(messages: list[dict]) -> str:
             return str(resp.json()["choices"][0]["message"]["content"])
 
     from app.llm.router import complete
-    return await complete(messages)
+    return await complete(messages, max_tokens=80, temperature=0.0)
 
 
 async def mistral_filter_research(
@@ -252,19 +266,15 @@ async def mistral_filter_research(
 
         lines = []
         for idx, (raw, area) in enumerate(batch):
-            snippet = _strip_html(str(raw.get("description") or ""))[:160].replace("\n", " ")
+            snippet = _strip_html(str(raw.get("description") or ""))[:150].replace("\n", " ")
             lines.append(
-                f"{idx}. \"{raw.get('title', '')}\" at "
-                f"{raw.get('company_name', '?')} [area: {area}] — {snippet}"
+                f"{idx}. {raw.get('title', '')} @ {raw.get('company_name', '?')} [{area}] — {snippet}"
             )
 
         prompt = (
-            f"User's research interests and skills: {interests_str}\n\n"
-            f"From the {len(batch)} listings below, keep ONLY those that are:\n"
-            f"  1. A research internship, REU, or research-assistant position\n"
-            f"  2. Relevant to the user's research interests\n\n"
-            f"Reply with ONLY a JSON array of 0-based indices. Example: [0,3]\n"
-            f"If none qualify, reply: []\n\n"
+            f"Research interests: {interests_str}\n\n"
+            f"Return indices of listings that are (1) research internship/REU/RA AND (2) match interests.\n"
+            f"Reply with JSON int array only. E.g. [0,3] or []\n\n"
             + "\n".join(lines)
         )
 
@@ -273,19 +283,18 @@ async def mistral_filter_research(
                 {
                     "role": "system",
                     "content": (
-                        "You are a research internship classifier. "
-                        "Reply ONLY with a valid JSON array of integers — nothing else."
+                        "Research internship classifier. "
+                        "Reply ONLY with a JSON array of integers. No explanation."
                     ),
                 },
                 {"role": "user", "content": prompt},
             ])
 
-            m = re.search(r"\[[\d\s,]*\]", result or "")
-            if not m:
+            indices = _extract_int_array(result or "")
+            if indices is None:
                 raise ValueError(f"no JSON array in: {result!r}")
-            indices: list[int] = json.loads(m.group())
             for idx in indices:
-                if isinstance(idx, int) and 0 <= idx < len(batch):
+                if 0 <= idx < len(batch):
                     kept.append(batch[idx])
 
         except Exception as exc:  # noqa: BLE001
@@ -392,7 +401,7 @@ class ResearchAggregationService:
         jsearch_key = getattr(settings, "JSEARCH_API_KEY", "")
 
         # ── 1. Fetch all sources in parallel ────────────────────────────────
-        tasks: list[asyncio.Task] = []
+        tasks: list[asyncio.Task[list[RawPosting]]] = []
         areas: list[str] = []
 
         for term, area in term_area_pairs:

@@ -205,15 +205,14 @@ class TrackerService(BaseService):
             days_since_applied = max(0, (datetime.now(UTC) - app.applied_at).days)
 
         system_msg = (
-            "You are a career advisor helping an internship applicant write a brief, "
-            "professional follow-up message. Be concise (3-5 sentences), friendly, and specific. "
-            "Write a complete, ready-to-send email — no placeholder text like [Your Name]."
+            "You are a career advisor writing brief, professional internship follow-up emails. "
+            "3-5 sentences, friendly, specific — no placeholder text like [Your Name]."
         )
 
         context_lines = [
             f"Company: {company.name}",
-            f"Position: {posting.title}",
-            f"Current status: {app.status}",
+            f"Role: {posting.title}",
+            f"Status: {app.status}",
         ]
         if days_since_applied is not None:
             context_lines.append(f"Days since applied: {days_since_applied}")
@@ -222,14 +221,32 @@ class TrackerService(BaseService):
 
         user_msg = (
             "\n".join(context_lines)
-            + "\n\nWrite a follow-up email with a subject line and body. "
-            "Reference the specific role and company. Keep it under 150 words."
+            + "\n\nWrite a follow-up email (subject line + body, ≤130 words). "
+            "Name the specific role and company. No placeholders."
         )
 
-        content = await complete([
-            {"role": "system", "content": system_msg},
-            {"role": "user", "content": user_msg},
-        ])
+        content = await complete(
+            [
+                {"role": "system", "content": system_msg},
+                {"role": "user", "content": user_msg},
+            ],
+            max_tokens=250,
+            temperature=0.6,
+        )
+
+        # Basic sanity: verify company name and role appear in the output
+        if company.name.lower() not in content.lower() or posting.title.lower() not in content.lower():
+            logger.warning(
+                "followup draft missing company/role name — regenerating: posting_id=%s", app.posting_id
+            )
+            content = await complete(
+                [
+                    {"role": "system", "content": system_msg},
+                    {"role": "user", "content": user_msg + f"\n\nIMPORTANT: You MUST mention '{company.name}' and '{posting.title}' by name."},
+                ],
+                max_tokens=250,
+                temperature=0.6,
+            )
         artifact = Artifact(
             user_id=self.user_id,
             application_id=application_id,

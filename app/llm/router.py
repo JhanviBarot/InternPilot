@@ -74,9 +74,14 @@ async def _try_gemini(messages: list[Message], **opts: Any) -> str:
     if not contents:
         contents = [types.Content(role="user", parts=[types.Part(text="")])]
 
-    config = types.GenerateContentConfig(
-        system_instruction="\n".join(system_parts) if system_parts else None,
-    )
+    config_kwargs: dict[str, Any] = {
+        "system_instruction": "\n".join(system_parts) if system_parts else None,
+    }
+    if "max_tokens" in opts:
+        config_kwargs["max_output_tokens"] = opts["max_tokens"]
+    if "temperature" in opts:
+        config_kwargs["temperature"] = opts["temperature"]
+    config = types.GenerateContentConfig(**config_kwargs)
 
     response = await asyncio.wait_for(
         client.aio.models.generate_content(
@@ -168,10 +173,12 @@ async def _try_deepseek(messages: list[Message], **opts: Any) -> str:
         api_key=settings.DEEPSEEK_API_KEY,
         base_url="https://api.deepseek.com",
     )
+    allowed_ds = {k: v for k, v in opts.items() if k in {"temperature", "max_tokens", "top_p"}}
     resp = await asyncio.wait_for(
         client.chat.completions.create(
             model="deepseek-chat",
             messages=messages,  # type: ignore[arg-type]
+            **allowed_ds,
         ),
         timeout=PROVIDER_TIMEOUT,
     )
@@ -189,10 +196,12 @@ async def _try_ollama(messages: list[Message], **opts: Any) -> str:
         api_key="ollama",
         base_url=f"{settings.OLLAMA_URL.rstrip('/')}/v1",
     )
+    allowed_ol = {k: v for k, v in opts.items() if k in {"temperature", "max_tokens", "top_p"}}
     resp = await asyncio.wait_for(
         client.chat.completions.create(
             model=opts.get("model", "llama3"),
             messages=messages,  # type: ignore[arg-type]
+            **allowed_ol,
         ),
         timeout=PROVIDER_TIMEOUT,
     )
@@ -207,10 +216,15 @@ async def _try_ollama(messages: list[Message], **opts: Any) -> str:
 async def complete(messages: list[Message], **opts: Any) -> str:
     """Return the first successful LLM completion, falling back across providers.
 
+    Pass ``prefer="fast"`` for short classification/extraction tasks (≤100 tokens)
+    to route Groq first and preserve Gemini quota for quality writing tasks.
+    Default ``prefer="quality"`` routes Gemini first for nuanced long-form output.
+
     Provider list is resolved at call time so mocker.patch.object works in tests.
     """
-    # Resolved at call time → patches applied to module attrs are respected
-    providers: list[tuple[str, Callable[..., Awaitable[str]]]] = [
+    prefer = opts.pop("prefer", "quality")
+
+    _quality_chain: list[tuple[str, Callable[..., Awaitable[str]]]] = [
         ("gemini", _try_gemini),
         ("groq", _try_groq),
         ("mistral", _try_mistral),
@@ -218,6 +232,15 @@ async def complete(messages: list[Message], **opts: Any) -> str:
         ("deepseek", _try_deepseek),
         ("ollama", _try_ollama),
     ]
+    _fast_chain: list[tuple[str, Callable[..., Awaitable[str]]]] = [
+        ("groq", _try_groq),
+        ("gemini", _try_gemini),
+        ("mistral", _try_mistral),
+        ("openrouter", _try_openrouter),
+        ("deepseek", _try_deepseek),
+        ("ollama", _try_ollama),
+    ]
+    providers = _fast_chain if prefer == "fast" else _quality_chain
     last_error: Exception | None = None
 
     for name, fn in providers:

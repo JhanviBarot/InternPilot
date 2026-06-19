@@ -346,11 +346,15 @@ class ResearchService(BaseService):
             + "\n\nWrite the professor cold-email."
         )
 
+        _pitch_opts = {"max_tokens": 550, "temperature": 0.7}
         try:
-            content = await complete([
-                {"role": "system", "content": system_msg},
-                {"role": "user", "content": user_msg},
-            ])
+            content = await complete(
+                [
+                    {"role": "system", "content": system_msg},
+                    {"role": "user", "content": user_msg},
+                ],
+                **_pitch_opts,
+            )
         except Exception as exc:
             logger.exception("draft_pitch LLM call failed: %s", exc)
             raise APIError(500, "PITCH_FAILED", "Failed to generate research pitch") from exc
@@ -372,12 +376,15 @@ class ResearchService(BaseService):
                     "Keep the Subject: line and the same 4-paragraph structure."
                 )
                 try:
-                    content = await complete([
-                        {"role": "system", "content": system_msg},
-                        {"role": "user", "content": user_msg},
-                        {"role": "assistant", "content": content},
-                        {"role": "user", "content": retry_msg},
-                    ])
+                    content = await complete(
+                        [
+                            {"role": "system", "content": system_msg},
+                            {"role": "user", "content": user_msg},
+                            {"role": "assistant", "content": content},
+                            {"role": "user", "content": retry_msg},
+                        ],
+                        **_pitch_opts,
+                    )
                     gs = _grounding_score(
                         content, desired_list, skills, project_techs, experience_text
                     )

@@ -85,18 +85,15 @@ def _grounding_score(
 ) -> float:
     """Fraction of JD requirements mentioned in draft that are backed by profile evidence."""
     draft_lower = draft.lower()
-    claimed = [r.strip().lower() for r in requirements if r.strip().lower() in draft_lower]
+    claimed = [r.strip() for r in requirements if r.strip().lower() in draft_lower]
     if not claimed:
         return 1.0
 
-    evidence: set[str] = set()
-    for s in profile_skills:
-        evidence.add(s.strip().lower())
-    for t in project_techs:
-        evidence.add(t.strip().lower())
-    exp_lower = experience_text.lower()
+    evidence_blob = (
+        " ".join(profile_skills) + " " + " ".join(project_techs) + " " + experience_text
+    ).lower()
 
-    grounded = sum(1 for c in claimed if c in evidence or c in exp_lower)
+    grounded = sum(1 for c in claimed if _kw_found(c, evidence_blob))
     return round(grounded / len(claimed), 4)
 
 
@@ -109,18 +106,13 @@ def _find_unsupported_claims(
 ) -> list[str]:
     """Return display-form requirements claimed in draft but NOT backed by profile evidence."""
     draft_lower = draft.lower()
-    evidence: set[str] = set()
-    for s in profile_skills:
-        evidence.add(s.strip().lower())
-    for t in project_techs:
-        evidence.add(t.strip().lower())
-    exp_lower = experience_text.lower()
+    evidence_blob = (
+        " ".join(profile_skills) + " " + " ".join(project_techs) + " " + experience_text
+    ).lower()
     return [
         r.strip()
         for r in requirements
-        if r.strip().lower() in draft_lower
-        and r.strip().lower() not in evidence
-        and r.strip().lower() not in exp_lower
+        if r.strip().lower() in draft_lower and not _kw_found(r.strip(), evidence_blob)
     ]
 
 
@@ -131,10 +123,16 @@ def _find_unsupported_claims(
 
 def _parse_llm_json(text: str) -> dict[str, Any]:
     text = text.strip()
-    # Strip markdown fences if present
-    text = re.sub(r"^```[a-z]*\n?", "", text)
-    text = re.sub(r"\n?```$", "", text.strip())
-    return json.loads(text.strip())  # type: ignore[no-any-return]
+    # Strip any markdown code fence (```json ... ``` or ``` ... ```)
+    text = re.sub(r"^```[a-z]*\s*", "", text, flags=re.IGNORECASE)
+    text = re.sub(r"\s*```\s*$", "", text.strip())
+    text = text.strip()
+    # If still not a JSON object, try to extract the first {...} block
+    if not text.startswith("{"):
+        m = re.search(r"\{.*\}", text, re.DOTALL)
+        if m:
+            text = m.group()
+    return json.loads(text)  # type: ignore[no-any-return]
 
 
 # ---------------------------------------------------------------------------
@@ -249,21 +247,29 @@ class ApplicationService(BaseService):
                 }
 
         reqs_json = json.dumps(list(posting.requirements or []))
-        prompt = (
-            "Analyze this job description and return a JSON object with exactly these keys:\n"
-            '- "requirements": list of 5-8 specific skills/qualifications required (concise strings, '
-            "under 60 chars each — e.g. 'Python 3.10+', 'REST API design', 'Strong communication')\n"
-            '- "keywords": list of important keywords and technologies for a résumé/cover letter '
-            "(strings — tools, frameworks, domain terms)\n"
-            '- "summary": 2-sentence plain-text summary of what this role is really looking for '
-            "(domain-specific, not generic — mention the field explicitly)\n\n"
-            f"Job title: {posting.title}\n"
-            f"Description: {posting.description[:3000]}\n"
+        system_msg = (
+            "You are a job-description analyst. "
+            'Return ONLY a valid JSON object with exactly three keys: "requirements", "keywords", "summary". '
+            "No markdown fences, no explanation."
+        )
+        user_msg = (
+            f"Title: {posting.title}\n"
+            f"Description: {posting.description[:2500]}\n"
             f"Listed requirements: {reqs_json}\n\n"
-            "Return ONLY valid JSON. No markdown, no explanation."
+            'requirements: 5-8 concise skill strings (≤60 chars each, e.g. "Python 3.10+", "REST API design")\n'
+            'keywords: important tools/frameworks/domain terms for résumé matching\n'
+            'summary: 2-sentence plain-text summary, domain-specific, not generic'
         )
         try:
-            response = await complete([{"role": "user", "content": prompt}])
+            response = await complete(
+                [
+                    {"role": "system", "content": system_msg},
+                    {"role": "user", "content": user_msg},
+                ],
+                max_tokens=600,
+                temperature=0.2,
+                prefer="fast",
+            )
             data = _parse_llm_json(response)
         except Exception as exc:
             logger.exception("decode LLM call failed: %s", exc)
@@ -457,12 +463,14 @@ class ApplicationService(BaseService):
             f"Output only the cover letter body. No subject line, no 'Dear Hiring Manager', no preamble."
         )
 
+        _draft_opts = {"max_tokens": 550, "temperature": 0.7}
         try:
             content_text = await complete(
                 [
                     {"role": "system", "content": system_msg},
                     {"role": "user", "content": user_msg},
-                ]
+                ],
+                **_draft_opts,
             )
         except Exception as exc:
             logger.exception("draft LLM call failed: %s", exc)
@@ -488,12 +496,15 @@ class ApplicationService(BaseService):
                     "Output only the corrected document."
                 )
                 try:
-                    content_text = await complete([
-                        {"role": "system", "content": system_msg},
-                        {"role": "user", "content": user_msg},
-                        {"role": "assistant", "content": content_text},
-                        {"role": "user", "content": retry_msg},
-                    ])
+                    content_text = await complete(
+                        [
+                            {"role": "system", "content": system_msg},
+                            {"role": "user", "content": user_msg},
+                            {"role": "assistant", "content": content_text},
+                            {"role": "user", "content": retry_msg},
+                        ],
+                        **_draft_opts,
+                    )
                     ats, missing = _compute_ats(requirements, profile_evidence)
                     gs = _grounding_score(
                         content_text, requirements, skills, project_techs, experience_text

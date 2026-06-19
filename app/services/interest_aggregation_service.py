@@ -33,6 +33,20 @@ from app.sources.base import RawPosting
 logger = logging.getLogger(__name__)
 
 TTL_HOURS = 48
+
+
+def _extract_int_array(text: str) -> list[int] | None:
+    """Robustly extract a JSON integer array from LLM output."""
+    for pattern in (r"\[[\d\s,]*\]", r"\[.*?\]"):
+        m = re.search(pattern, text, re.DOTALL)
+        if m:
+            try:
+                parsed = json.loads(m.group())
+                if isinstance(parsed, list):
+                    return [int(x) for x in parsed if isinstance(x, (int, float)) and int(x) == x]
+            except (json.JSONDecodeError, ValueError):
+                continue
+    return None
 MAX_TERMS = 5
 ADZUNA_PAGES_PER_TERM = 2   # 100 results per term; stays inside 250/month free tier
 LLM_BATCH_SIZE = 12          # postings per LLM call
@@ -156,43 +170,42 @@ async def llm_filter_postings(
 
         listing_lines = []
         for idx, raw in enumerate(batch):
-            snippet = _strip_html(str(raw.get("description") or ""))[:180].replace("\n", " ")
+            snippet = _strip_html(str(raw.get("description") or ""))[:150].replace("\n", " ")
             listing_lines.append(
-                f"{idx}. \"{raw.get('title', '')}\" at {raw.get('company_name', '?')} — {snippet}"
+                f"{idx}. {raw.get('title', '')} @ {raw.get('company_name', '?')} — {snippet}"
             )
         listing_text = "\n".join(listing_lines)
 
         prompt = (
-            f"User's fields of interest: {interests_str}\n\n"
-            f"Below are {len(batch)} job listings (index. title at company — description snippet).\n"
-            f"Return ONLY a JSON array of 0-based indices for listings that are:\n"
-            f"  1. An internship or intern-level role\n"
-            f"  2. Relevant to the user's fields of interest above\n\n"
-            f"Reply with only the JSON array, nothing else. Example: [0,2,5]\n"
-            f"If none qualify, reply: []\n\n"
-            f"Listings:\n{listing_text}"
+            f"Interests: {interests_str}\n\n"
+            f"Return indices of listings that are (1) internship-level AND (2) match interests.\n"
+            f"Reply with JSON int array only. E.g. [0,2] or []\n\n"
+            + listing_text
         )
 
         try:
-            result = await complete([
-                {
-                    "role": "system",
-                    "content": (
-                        "You are a job relevance classifier. "
-                        "Reply ONLY with a valid JSON array of integers. No explanation."
-                    ),
-                },
-                {"role": "user", "content": prompt},
-            ])
+            result = await complete(
+                [
+                    {
+                        "role": "system",
+                        "content": (
+                            "Job relevance classifier. "
+                            "Reply ONLY with a JSON array of integers. No explanation, no prose."
+                        ),
+                    },
+                    {"role": "user", "content": prompt},
+                ],
+                max_tokens=80,
+                temperature=0.0,
+                prefer="fast",
+            )
 
-            match = re.search(r"\[[\d\s,]*\]", result or "")
-            if match:
-                indices: list[int] = json.loads(match.group())
-                for idx in indices:
-                    if isinstance(idx, int) and 0 <= idx < len(batch):
-                        kept.append(batch[idx])
-            else:
+            indices = _extract_int_array(result or "")
+            if indices is None:
                 raise ValueError(f"no JSON array in LLM response: {result!r}")
+            for idx in indices:
+                if 0 <= idx < len(batch):
+                    kept.append(batch[idx])
 
         except Exception as exc:  # noqa: BLE001
             logger.warning("llm_filter batch %d failed (%s) — falling back to title filter", batch_start, exc)
@@ -247,7 +260,7 @@ class InterestAggregationService:
         usa_email   = getattr(settings, "USAJOBS_EMAIL",   "")
         jsearch_key = getattr(settings, "JSEARCH_API_KEY", "")
 
-        tasks: list[asyncio.Task] = []
+        tasks: list[asyncio.Task[list[RawPosting]]] = []
 
         if adzuna_id and adzuna_key:
             for term in terms:

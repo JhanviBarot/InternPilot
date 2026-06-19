@@ -193,20 +193,22 @@ async def _llm_explanation_for_detail(
                 {
                     "role": "system",
                     "content": (
-                        "You are a concise career advisor for internship applicants. "
-                        "Answer in 2-3 sentences."
+                        "Concise internship career advisor. Reply in exactly 2-3 sentences."
                     ),
                 },
                 {
                     "role": "user",
                     "content": (
-                        f"Role: {posting.title} at {company.name}. "
-                        f"Candidate skills: {skills_str}. "
-                        f"Requirements: {reqs_str}. "
-                        "Why does this role fit and how should the candidate position themselves?"
+                        f"Role: {posting.title} at {company.name}\n"
+                        f"Candidate skills: {skills_str}\n"
+                        f"Requirements: {reqs_str}\n"
+                        "Why does this role fit, and how should the candidate position themselves?"
                     ),
                 },
-            ]
+            ],
+            max_tokens=150,
+            temperature=0.5,
+            prefer="fast",
         )
         return result.strip()
     except Exception:  # noqa: BLE001

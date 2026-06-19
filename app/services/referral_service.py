@@ -352,10 +352,14 @@ class ReferralService(BaseService):
             "and offer advice/a forward as alternatives to a direct referral."
         )
 
-        intro_text = await complete([
-            {"role": "system", "content": system_msg},
-            {"role": "user", "content": user_msg},
-        ])
+        _ref_opts = {"max_tokens": 380, "temperature": 0.7}
+        intro_text = await complete(
+            [
+                {"role": "system", "content": system_msg},
+                {"role": "user", "content": user_msg},
+            ],
+            **_ref_opts,
+        )
 
         # Guard loop: if fabricated tech terms detected, retry once
         gs = _intro_grounding_score(intro_text, whitelist_lower)
@@ -370,12 +374,15 @@ class ReferralService(BaseService):
                     "using ONLY the whitelist. Output only the corrected intro."
                 )
                 try:
-                    intro_text = await complete([
-                        {"role": "system", "content": system_msg},
-                        {"role": "user", "content": user_msg},
-                        {"role": "assistant", "content": intro_text},
-                        {"role": "user", "content": retry_msg},
-                    ])
+                    intro_text = await complete(
+                        [
+                            {"role": "system", "content": system_msg},
+                            {"role": "user", "content": user_msg},
+                            {"role": "assistant", "content": intro_text},
+                            {"role": "user", "content": retry_msg},
+                        ],
+                        **_ref_opts,
+                    )
                     gs = _intro_grounding_score(intro_text, whitelist_lower)
                 except Exception as exc:
                     logger.warning("referral intro retry failed, keeping first: %s", exc)
