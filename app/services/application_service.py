@@ -290,31 +290,70 @@ class ApplicationService(BaseService):
     # ats_score — DETERMINISTIC, no LLM
     # ------------------------------------------------------------------
 
-    def _ats_keywords(self, posting: Posting) -> list[str]:
-        """Return the best available keyword list for ATS scoring.
+    def _ats_requirements(self, posting: Posting) -> list[str]:
+        """Return ONLY actual job requirements for ATS scoring.
 
-        Priority: decode_cache (LLM-extracted, most comprehensive) → requirements
-        (pipeline-extracted, often sparse) → empty (vacuously 100 score).
+        Real ATS systems compare the candidate's profile against what the role
+        actually requires — not every keyword from the full job description.
+        Priority: decode_cache.requirements → posting.requirements → [].
         """
         if posting.decode_cache and isinstance(posting.decode_cache, dict):
             cache = posting.decode_cache
-            # Combine keywords + requirements from cache, dedupe preserving order
-            seen: set[str] = set()
-            result: list[str] = []
-            for k in list(cache.get("keywords", [])) + list(cache.get("requirements", [])):
-                kl = str(k).strip().lower()
-                if kl and kl not in seen:
-                    seen.add(kl)
-                    result.append(str(k).strip())
-            if result:
-                return result
+            reqs = [str(r).strip() for r in cache.get("requirements", []) if str(r).strip()]
+            if reqs:
+                return reqs
         return [str(r) for r in (posting.requirements or [])]
 
     async def ats_score(self, posting_id: uuid.UUID, content: str) -> dict[str, Any]:
         posting = await self._get_posting(posting_id)
-        keywords = self._ats_keywords(posting)
-        score, missing = _compute_ats(keywords, content)
+        requirements = self._ats_requirements(posting)
+        score, missing = _compute_ats(requirements, content)
         return {"ats_score": score, "missing_keywords": missing}
+
+    async def get_latest_draft(self, posting_id: uuid.UUID) -> ArtifactSchema | None:
+        """Return the most recent cover letter draft for this user+posting, or None."""
+        from app.models.artifact import Artifact
+
+        # Look for drafts linked to applications for this posting
+        app_rows = (
+            await self.db.execute(
+                select(Application)
+                .where(Application.user_id == self.user_id, Application.posting_id == posting_id)
+                .order_by(Application.created_at.desc())
+            )
+        ).scalars().all()
+
+        if app_rows:
+            app_ids = [a.id for a in app_rows]
+            artifact = (
+                await self.db.execute(
+                    select(Artifact)
+                    .where(
+                        Artifact.application_id.in_(app_ids),
+                        Artifact.type == "cover_letter",
+                    )
+                    .order_by(Artifact.created_at.desc())
+                )
+            ).scalar_one_or_none()
+            if artifact is not None:
+                return coerce_artifact_schema(artifact)
+
+        # Also check standalone drafts (application_id=None) for this user+type
+        # keyed by a posting tag stored in metadata (we use a simple approach: check
+        # the most recent cover_letter artifact for this user that has no application)
+        standalone = (
+            await self.db.execute(
+                select(Artifact)
+                .where(
+                    Artifact.user_id == self.user_id,
+                    Artifact.application_id.is_(None),
+                    Artifact.type == "cover_letter",
+                )
+                .order_by(Artifact.created_at.desc())
+                .limit(1)
+            )
+        ).scalar_one_or_none()
+        return coerce_artifact_schema(standalone) if standalone else None
 
     # ------------------------------------------------------------------
     # draft — LLM + ats_score + grounding_score
@@ -371,7 +410,9 @@ class ApplicationService(BaseService):
                     )
             edu_bullets = "\n".join(f"  - {e}" for e in edu_parts)
 
-        reqs_str = ", ".join(str(r) for r in (posting.requirements or []))
+        # Get actual requirements for ATS (not all keywords)
+        requirements = self._ats_requirements(posting)
+        reqs_str = ", ".join(requirements) if requirements else ", ".join(str(r) for r in (posting.requirements or []))
 
         # Explicit whitelist — the LLM may only draw from verified profile terms
         allowed_set = set(skills) | set(project_techs)
@@ -390,25 +431,30 @@ class ApplicationService(BaseService):
             )
 
         system_msg = (
-            "You are a career advisor for internship applicants writing a tailored application document. "
+            "You are an expert at writing genuine, human-sounding internship cover letters. "
+            "Your writing style is confident, specific, and personal — it reads like a real person wrote it, "
+            "not a template. You never use clichés like 'I am writing to express my interest' or "
+            "'I believe I would be a great fit'. Instead, open with a specific hook about the company or role. "
             f"{whitelist_rule} "
-            "Use specific bullets: action verb + verified skill + scope + measurable outcome."
+            "Structure: (1) specific hook about why THIS company/role excites you, "
+            "(2) 2-3 concrete achievements from their verified experience that map directly to requirements, "
+            "(3) one sentence on what you'd bring in your first 90 days, "
+            "(4) brief closing — warm but not sycophantic. "
+            "Write in first person, 3-4 short paragraphs, no bullet points, ~250-300 words. "
+            "Every claim must be provable in an interview from the verified whitelist."
         )
         user_msg = (
-            f"Generate a {artifact_type} for this internship application.\n\n"
-            f"JOB:\n"
-            f"Title: {posting.title}\n"
-            f"Company: {company.name}\n"
-            f"Description: {posting.description[:2000]}\n"
-            f"Requirements: {reqs_str}\n"
-            f"Channel: {channel}\n\n"
-            f"CANDIDATE PROFILE (authoritative — use nothing outside this):\n"
-            f"Headline: {headline}\n"
-            f"Skills: {', '.join(skills)}\n"
+            f"Write a cover letter for this internship.\n\n"
+            f"ROLE: {posting.title} at {company.name}\n"
+            f"REQUIREMENTS: {reqs_str}\n"
+            f"JOB CONTEXT: {posting.description[:1500]}\n\n"
+            f"CANDIDATE PROFILE (use ONLY this — do not invent):\n"
+            f"Headline: {headline or 'Student'}\n"
+            f"Skills: {', '.join(skills) or 'none listed'}\n"
             f"Experience:\n{exp_bullets or '  (none listed)'}\n"
             f"Projects:\n{proj_bullets or '  (none listed)'}\n"
             f"Education:\n{edu_bullets or '  (none listed)'}\n\n"
-            f"Output only the document text. No preamble, no explanation."
+            f"Output only the cover letter body. No subject line, no 'Dear Hiring Manager', no preamble."
         )
 
         try:
@@ -422,15 +468,16 @@ class ApplicationService(BaseService):
             logger.exception("draft LLM call failed: %s", exc)
             raise APIError(500, "DRAFT_FAILED", "Failed to generate draft") from exc
 
-        keywords = self._ats_keywords(posting)
-        ats, missing = _compute_ats(keywords, content_text)
-        gs = _grounding_score(content_text, keywords, skills, project_techs, experience_text)
+        # ATS: check profile (skills + experience) against job requirements — not cover letter
+        profile_evidence = " ".join(skills) + " " + " ".join(project_techs) + " " + experience_text
+        ats, missing = _compute_ats(requirements, profile_evidence)
+        gs = _grounding_score(content_text, requirements, skills, project_techs, experience_text)
 
         # Guard loop: if grounding is still low and the profile has verifiable evidence,
         # show the LLM exactly which claims to remove and regenerate once.
         if gs < 0.7 and (skills or project_techs):
             unsupported = _find_unsupported_claims(
-                content_text, keywords, skills, project_techs, experience_text
+                content_text, requirements, skills, project_techs, experience_text
             )
             if unsupported:
                 names = ", ".join(unsupported)
@@ -447,9 +494,9 @@ class ApplicationService(BaseService):
                         {"role": "assistant", "content": content_text},
                         {"role": "user", "content": retry_msg},
                     ])
-                    ats, missing = _compute_ats(keywords, content_text)
+                    ats, missing = _compute_ats(requirements, profile_evidence)
                     gs = _grounding_score(
-                        content_text, keywords, skills, project_techs, experience_text
+                        content_text, requirements, skills, project_techs, experience_text
                     )
                 except Exception as exc:
                     logger.warning("draft retry failed, keeping first attempt: %s", exc)

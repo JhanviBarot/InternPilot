@@ -30,6 +30,7 @@ class Settings(BaseSettings):
     # LLM providers — all optional so missing key = provider skipped
     GEMINI_API_KEY: str = ""
     GROQ_API_KEY: str = ""
+    MISTRAL_API_KEY: str = ""
     OPENROUTER_API_KEY: str = ""
     DEEPSEEK_API_KEY: str = ""
     OLLAMA_URL: str = ""

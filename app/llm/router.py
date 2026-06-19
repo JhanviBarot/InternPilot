@@ -109,6 +109,30 @@ async def _try_groq(messages: list[Message], **opts: Any) -> str:
     return str(resp.choices[0].message.content)
 
 
+async def _try_mistral(messages: list[Message], **opts: Any) -> str:
+    if not settings.MISTRAL_API_KEY:
+        raise _ProviderSkippedError("MISTRAL_API_KEY not set")
+
+    from openai import AsyncOpenAI
+
+    client = AsyncOpenAI(
+        api_key=settings.MISTRAL_API_KEY,
+        base_url="https://api.mistral.ai/v1",
+    )
+    allowed = {k: v for k, v in opts.items() if k in {"temperature", "max_tokens", "top_p"}}
+    model = opts.get("model", "mistral-medium-latest")
+    resp = await asyncio.wait_for(
+        client.chat.completions.create(
+            model=model,
+            messages=messages,  # type: ignore[arg-type]
+            **allowed,
+        ),
+        timeout=PROVIDER_TIMEOUT,
+    )
+    content = resp.choices[0].message.content
+    return str(content) if content is not None else ""
+
+
 async def _try_openrouter(messages: list[Message], **opts: Any) -> str:
     if not settings.OPENROUTER_API_KEY:
         raise _ProviderSkippedError("OPENROUTER_API_KEY not set")
@@ -189,6 +213,7 @@ async def complete(messages: list[Message], **opts: Any) -> str:
     providers: list[tuple[str, Callable[..., Awaitable[str]]]] = [
         ("gemini", _try_gemini),
         ("groq", _try_groq),
+        ("mistral", _try_mistral),
         ("openrouter", _try_openrouter),
         ("deepseek", _try_deepseek),
         ("ollama", _try_ollama),

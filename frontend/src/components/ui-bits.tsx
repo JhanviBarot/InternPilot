@@ -19,7 +19,7 @@ export function MatchRing({ value, size = 64, label }: { value: number; size?: n
       </svg>
       <div className="absolute inset-0 grid place-items-center">
         <div className="text-center leading-none">
-          <div className="font-mono text-[13px] font-semibold">{pct}</div>
+          <div className="font-mono text-[13px] font-semibold">{pct}%</div>
           {label && <div className="text-[9px] uppercase tracking-wider text-muted-foreground mt-0.5">{label}</div>}
         </div>
       </div>

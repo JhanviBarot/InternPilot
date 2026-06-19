@@ -75,6 +75,17 @@ async def ats_score(
     return AtsScoreResponse(**result)
 
 
+@router.get("/applications/draft/latest", response_model=DraftResponse | None)
+async def get_latest_draft(
+    posting_id: uuid.UUID = Query(...),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> DraftResponse | None:
+    svc = ApplicationService(db, current_user.id)
+    artifact = await svc.get_latest_draft(posting_id)
+    return DraftResponse(artifact=artifact) if artifact else None
+
+
 @router.post("/applications/draft", response_model=DraftResponse)
 async def draft_artifact(
     body: DraftRequest,

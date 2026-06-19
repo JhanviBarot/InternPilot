@@ -660,6 +660,32 @@ export const api = {
     return postings[0];
   },
 
+  async getLatestDraft(posting_id: string): Promise<{ artifact_id: string; content: string; ats_score: number; missing_keywords: string[] } | null> {
+    if (!shouldUseMocks()) {
+      try {
+        const raw = await http<any>(`/applications/draft/latest?posting_id=${posting_id}`);
+        if (!raw) return null;
+        const a = raw?.artifact ?? raw;
+        return {
+          artifact_id: String(a.id ?? ""),
+          content: String(a.content ?? ""),
+          ats_score: Number(a.ats_score ?? 0),
+          missing_keywords: Array.isArray(a.missing_keywords) ? a.missing_keywords : [],
+        };
+      } catch { return null; }
+    }
+    return null;
+  },
+
+  async updateArtifact(artifact_id: string, content: string): Promise<void> {
+    if (!shouldUseMocks()) {
+      await http<any>(`/artifacts/${artifact_id}`, {
+        method: "PUT",
+        body: JSON.stringify({ content }),
+      });
+    }
+  },
+
   async draftCoverLetter(posting_id: string): Promise<{ artifact_id: string; content: string; ats_score: number; missing_keywords: string[] }> {
     if (!shouldUseMocks()) {
       const raw = await http<any>("/applications/draft", {

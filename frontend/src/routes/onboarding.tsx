@@ -249,18 +249,68 @@ function OnboardingInner({ initialProfile }: { initialProfile: Profile }) {
           <h2 className="font-display text-xl">Résumé</h2>
           <p className="text-sm text-muted-foreground mt-1">PDF or DOCX, max 5 MB. We extract skills, experience, and education automatically.</p>
           {resumeDone ? (
-            <div className="mt-5 space-y-2">
-              <div className="flex items-center gap-2 text-sm" style={{ color: "var(--color-primary)" }}>
-                <Check className="h-4 w-4" /> Résumé parsed successfully
+            <div className="mt-5 space-y-4">
+              <div className="flex items-center gap-2 text-sm font-medium" style={{ color: "var(--color-primary)" }}>
+                <Check className="h-4 w-4" /> Résumé parsed — here's what we extracted:
               </div>
-              {extractedSummary && (
-                <div className="text-xs text-muted-foreground">{extractedSummary} — form fields updated below.</div>
+
+              {profile.skills.length > 0 && (
+                <div className="rounded-xl border p-4" style={{ borderColor: "var(--color-hairline)" }}>
+                  <div className="text-xs uppercase tracking-[0.14em] text-muted-foreground mb-2">Skills detected ({profile.skills.length})</div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {profile.skills.slice(0, 20).map((s) => <Pill key={s}>{s}</Pill>)}
+                    {profile.skills.length > 20 && <span className="text-xs text-muted-foreground self-center">+{profile.skills.length - 20} more</span>}
+                  </div>
+                </div>
               )}
+
+              {profile.experience.length > 0 && (
+                <div className="rounded-xl border p-4" style={{ borderColor: "var(--color-hairline)" }}>
+                  <div className="text-xs uppercase tracking-[0.14em] text-muted-foreground mb-2">Experience ({profile.experience.length} entries)</div>
+                  <ul className="space-y-2 text-sm">
+                    {profile.experience.map((e: any, i: number) => (
+                      <li key={i} className="flex gap-2 text-muted-foreground">
+                        <span className="font-mono text-xs mt-0.5">·</span>
+                        <span><strong className="text-foreground">{e.title}</strong>{e.org ? ` at ${e.org}` : ""}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              {profile.education.length > 0 && (
+                <div className="rounded-xl border p-4" style={{ borderColor: "var(--color-hairline)" }}>
+                  <div className="text-xs uppercase tracking-[0.14em] text-muted-foreground mb-2">Education</div>
+                  <ul className="space-y-1.5 text-sm">
+                    {profile.education.map((e: any, i: number) => (
+                      <li key={i} className="text-muted-foreground">
+                        <strong className="text-foreground">{e.degree}</strong>{e.institution ? ` · ${e.institution}` : ""}
+                        {e.year ? ` · ${e.year}` : ""}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              {profile.research_interests.length > 0 && (
+                <div className="rounded-xl border p-4" style={{ borderColor: "var(--color-hairline)" }}>
+                  <div className="text-xs uppercase tracking-[0.14em] text-muted-foreground mb-2">Research interests</div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {profile.research_interests.map((r) => (
+                      <span key={r} className="inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium"
+                            style={{ background: "var(--color-primary-tint)", color: "var(--color-primary)" }}>
+                        {r}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               <button
                 onClick={() => { setResumeDone(false); setExtractedSummary(null); }}
                 className="text-xs text-muted-foreground underline"
               >
-                Upload another
+                Upload a different résumé
               </button>
             </div>
           ) : (
