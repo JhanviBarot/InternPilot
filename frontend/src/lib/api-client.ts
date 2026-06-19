@@ -228,6 +228,19 @@ export async function authLogin(email: string, password: string): Promise<AuthPa
   return data;
 }
 
+export async function authGoogleLogin(idToken: string): Promise<AuthPayload> {
+  const data = await http<AuthPayload>(
+    "/auth/google",
+    { method: "POST", body: JSON.stringify({ id_token: idToken }) },
+    { skipAuthRedirect: true },
+  );
+  setToken(data.token);
+  if (data.refresh_token) setRefreshToken(data.refresh_token);
+  storeUser(mapUser(data));
+  setGuestMode(false);
+  return data;
+}
+
 export async function authLogout(): Promise<void> {
   try { await http("/auth/logout", { method: "POST" }); } catch { /* ignore */ }
   clearToken();

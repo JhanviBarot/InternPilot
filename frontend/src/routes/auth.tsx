@@ -1,8 +1,10 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { LiveBackground } from "@/components/live-background";
 import { Compass, ArrowRight, UserRound } from "lucide-react";
-import { useState } from "react";
-import { authLogin, authSignup, setGuestMode } from "@/lib/api-client";
+import { useState, useEffect, useRef } from "react";
+import { authLogin, authSignup, authGoogleLogin, setGuestMode } from "@/lib/api-client";
+
+const GOOGLE_CLIENT_ID = (import.meta as any).env?.VITE_GOOGLE_CLIENT_ID ?? "";
 
 export const Route = createFileRoute("/auth")({
   head: () => ({ meta: [{ title: "Sign in — InternPilot" }, { name: "description", content: "Sign in to InternPilot." }] }),
@@ -17,6 +19,46 @@ function Auth() {
   const [mode, setMode] = useState<"login" | "signup">("login");
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const googleBtnRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!GOOGLE_CLIENT_ID || typeof window === "undefined") return;
+    const initGoogle = () => {
+      const g = (window as any).google;
+      if (!g) return;
+      g.accounts.id.initialize({
+        client_id: GOOGLE_CLIENT_ID,
+        callback: async (response: { credential: string }) => {
+          setError(null);
+          try {
+            await authGoogleLogin(response.credential);
+            navigate({ to: "/onboarding" });
+          } catch (err: any) {
+            setError(err?.message ?? "Google sign-in failed. Please try again.");
+          }
+        },
+      });
+      if (googleBtnRef.current) {
+        g.accounts.id.renderButton(googleBtnRef.current, {
+          theme: "outline",
+          size: "large",
+          width: googleBtnRef.current.offsetWidth || 360,
+          text: "continue_with",
+          shape: "pill",
+        });
+      }
+    };
+    if ((window as any).google?.accounts) {
+      initGoogle();
+    } else {
+      const script = document.createElement("script");
+      script.src = "https://accounts.google.com/gsi/client";
+      script.async = true;
+      script.defer = true;
+      script.onload = initGoogle;
+      document.head.appendChild(script);
+    }
+  }, []);
 
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -150,6 +192,10 @@ function Auth() {
             <div className="absolute inset-0 flex items-center"><div className="w-full border-t" style={{ borderColor: "var(--color-hairline)" }} /></div>
             <div className="relative flex justify-center"><span className="bg-white px-3 text-xs text-muted-foreground">or</span></div>
           </div>
+
+          {GOOGLE_CLIENT_ID && (
+            <div ref={googleBtnRef} className="mt-4 w-full flex justify-center" />
+          )}
 
           <button
             type="button"
