@@ -34,6 +34,10 @@ Message = dict[str, str]
 PROVIDER_TIMEOUT: float = 30.0
 BACKOFF_S: float = 0.5
 
+# Process-lifetime circuit breaker — once a provider returns 429 it is skipped
+# for all subsequent calls in this process so we never wait out a quota cooldown.
+_rate_limited: set[str] = set()
+
 
 # ---------------------------------------------------------------------------
 # Sentinel — raised when a provider is skipped (no key configured).
@@ -192,6 +196,8 @@ async def complete(messages: list[Message], **opts: Any) -> str:
     last_error: Exception | None = None
 
     for name, fn in providers:
+        if name in _rate_limited:
+            continue
         try:
             result = await fn(messages, **opts)
             logger.info("llm.served_by=%s", name)
@@ -199,7 +205,14 @@ async def complete(messages: list[Message], **opts: Any) -> str:
         except _ProviderSkippedError:
             continue
         except Exception as exc:
-            logger.warning("llm.provider_failed provider=%s error=%s", name, exc)
+            exc_str = str(exc)
+            if "429" in exc_str or "RESOURCE_EXHAUSTED" in exc_str or "rate_limit" in exc_str.lower():
+                _rate_limited.add(name)
+                logger.warning(
+                    "llm.provider_rate_limited provider=%s — circuit open for this session", name
+                )
+            else:
+                logger.warning("llm.provider_failed provider=%s error=%s", name, exc)
             last_error = exc
             await asyncio.sleep(BACKOFF_S)
 
