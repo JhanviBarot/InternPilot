@@ -44,7 +44,7 @@ export function setGuestMode(value: boolean): void {
 }
 
 function shouldUseMocks(): boolean {
-  return USE_MOCKS || isGuestMode();
+  return USE_MOCKS || isGuestMode() || !getToken();
 }
 
 const delay = (ms = 180) => new Promise<void>((r) => setTimeout(r, ms));
