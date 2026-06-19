@@ -15,9 +15,16 @@ from sqlalchemy.orm import selectinload
 
 from app.models.application import Application
 from app.models.artifact import Artifact
+from app.models.company import Company
 from app.models.outcome import Outcome
 from app.models.posting import Posting
-from app.schemas.dashboard import DashboardSummary, DigestResponse, PipelineCounts
+from app.schemas.dashboard import (
+    CohortCompany,
+    CohortResponse,
+    DashboardSummary,
+    DigestResponse,
+    PipelineCounts,
+)
 from app.services.base import BaseService
 from app.services.evaluation_service import EvaluationService
 from app.services.tracker_service import FOLLOWUP_DAYS
@@ -136,6 +143,40 @@ class DashboardService(BaseService):
             platform_iq=platform_iq,
             iq_trend=iq_trend,
         )
+
+    async def get_cohort_companies(self) -> CohortResponse:
+        """Return top companies ranked by cohort responsiveness, using real DB data."""
+        rows = (
+            await self.db.execute(
+                select(Company)
+                .where(Company.cohort_applied_count > 0)
+                .order_by(Company.responsiveness_score.desc(), Company.cohort_applied_count.desc())
+                .limit(8)
+            )
+        ).scalars().all()
+
+        companies: list[CohortCompany] = []
+        for c in rows:
+            rate = round(c.responsiveness_score, 3)
+            if c.ghost_history_score > 0.5:
+                note = "high ghost rate — try referral route"
+            elif rate >= 0.30:
+                note = f"{c.cohort_applied_count} cohort applications"
+            elif rate >= 0.15:
+                note = "solid response rate — direct apply ok"
+            else:
+                note = "cold applies — referral strongly recommended"
+            companies.append(
+                CohortCompany(
+                    company_name=c.name,
+                    response_rate=rate,
+                    applied_count=c.cohort_applied_count,
+                    note=note,
+                )
+            )
+
+        # If no real data yet (fresh DB), return empty list — no fake data
+        return CohortResponse(companies=companies)
 
     async def get_digest(self) -> DigestResponse:
         apps = await self._load_apps()

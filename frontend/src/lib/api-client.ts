@@ -660,7 +660,7 @@ export const api = {
     return postings[0];
   },
 
-  async draftCoverLetter(posting_id: string): Promise<{ content: string; ats_score: number; missing_keywords: string[] }> {
+  async draftCoverLetter(posting_id: string): Promise<{ artifact_id: string; content: string; ats_score: number; missing_keywords: string[] }> {
     if (!shouldUseMocks()) {
       const raw = await http<any>("/applications/draft", {
         method: "POST",
@@ -668,13 +668,26 @@ export const api = {
       });
       const a = raw?.artifact ?? raw;
       return {
+        artifact_id: String(a.id ?? ""),
         content: String(a.content ?? ""),
         ats_score: Number(a.ats_score ?? 0),
         missing_keywords: Array.isArray(a.missing_keywords) ? a.missing_keywords : [],
       };
     }
     await delay(280);
-    return { content: "", ats_score: 0, missing_keywords: [] };
+    return { artifact_id: "", content: "", ats_score: 0, missing_keywords: [] };
+  },
+
+  async createApplication(posting_id: string, channel: "portal" | "email" | "referral", artifact_id: string): Promise<Application> {
+    if (!shouldUseMocks()) {
+      const raw = await http<any>("/applications", {
+        method: "POST",
+        body: JSON.stringify({ posting_id, channel, artifact_id }),
+      });
+      return mapApplication(raw?.application ?? raw);
+    }
+    await delay(120);
+    return _applications[0];
   },
 
   // ---------- Referrals ----------
@@ -720,6 +733,14 @@ export const api = {
   },
 
   // ---------- Dashboard ----------
+  async getCohortCompanies(): Promise<Array<{ company_name: string; response_rate: number; applied_count: number; note: string }>> {
+    if (!shouldUseMocks()) {
+      const raw = await http<any>("/dashboard/cohort");
+      return Array.isArray(raw?.companies) ? raw.companies : [];
+    }
+    await delay();
+    return [];
+  },
   async getDashboard(): Promise<DashboardSummary> {
     if (!shouldUseMocks()) {
       const raw = await http<any>("/dashboard");

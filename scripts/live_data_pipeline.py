@@ -92,32 +92,72 @@ def strip_html(raw: str) -> str:
 
 
 def normalise_location(loc: str | None) -> str | None:
-    """Standardise common location aliases."""
+    """Standardise common location aliases to canonical City, ST format."""
     if not loc:
         return None
     loc = loc.strip()
-    aliases = {
+    # Remove trailing country codes like ", US" or ", United States"
+    loc = re.sub(r",?\s*(US|USA|United States|United Kingdom|UK)$", "", loc, flags=re.IGNORECASE).strip()
+
+    # Exact-match aliases (case-insensitive)
+    _aliases: dict[str, str] = {
         "NYC": "New York, NY",
         "New York": "New York, NY",
         "New York City": "New York, NY",
+        "New York, New York": "New York, NY",
         "SF": "San Francisco, CA",
         "San Francisco": "San Francisco, CA",
+        "San Francisco Bay Area": "San Francisco Bay Area, CA",
         "SFBay": "San Francisco Bay Area, CA",
         "Bay Area": "San Francisco Bay Area, CA",
+        "Silicon Valley": "San Francisco Bay Area, CA",
         "LA": "Los Angeles, CA",
         "Los Angeles": "Los Angeles, CA",
         "Seattle": "Seattle, WA",
+        "Seattle, Washington": "Seattle, WA",
         "Boston": "Boston, MA",
+        "Boston, Massachusetts": "Boston, MA",
+        "Cambridge": "Cambridge, MA",
+        "Cambridge, MA": "Cambridge, MA",
         "Chicago": "Chicago, IL",
+        "Chicago, Illinois": "Chicago, IL",
         "Austin": "Austin, TX",
+        "Austin, Texas": "Austin, TX",
         "Denver": "Denver, CO",
+        "Denver, Colorado": "Denver, CO",
+        "Atlanta": "Atlanta, GA",
+        "Atlanta, Georgia": "Atlanta, GA",
+        "Washington DC": "Washington, DC",
+        "Washington D.C.": "Washington, DC",
+        "Washington, D.C.": "Washington, DC",
+        "DC": "Washington, DC",
+        "Raleigh": "Raleigh, NC",
+        "Pittsburgh": "Pittsburgh, PA",
+        "Minneapolis": "Minneapolis, MN",
+        "Portland": "Portland, OR",
+        "Dallas": "Dallas, TX",
+        "Houston": "Houston, TX",
+        "Phoenix": "Phoenix, AZ",
+        "San Diego": "San Diego, CA",
+        "San Jose": "San Jose, CA",
         "Remote": "Remote",
         "Worldwide": "Remote",
         "Anywhere": "Remote",
+        "Global": "Remote",
+        "Work from home": "Remote",
+        "Work From Home": "Remote",
+        "WFH": "Remote",
+        "Hybrid": "Hybrid",
+        "Onsite": "On-site",
+        "On Site": "On-site",
+        "On-site": "On-site",
     }
-    for alias, canonical in aliases.items():
+    for alias, canonical in _aliases.items():
         if re.fullmatch(re.escape(alias), loc, re.IGNORECASE):
             return canonical
+    # Partial-match: if "remote" appears anywhere treat as Remote
+    if re.search(r"\bremote\b", loc, re.IGNORECASE):
+        return "Remote"
     return loc
 
 
@@ -163,10 +203,11 @@ def extract_requirements_from_text(text: str) -> list[str]:
 
 
 # ---------------------------------------------------------------------------
-# LLM enrichment helpers (with cooldown)
+# LLM enrichment helpers (batched, with cooldown)
 # ---------------------------------------------------------------------------
 
 _last_llm_call: float = 0.0
+LLM_BATCH_SIZE: int = 5  # postings per LLM call — amortises system-prompt tokens
 
 
 async def _llm_with_cooldown(messages: list[dict]) -> str:
@@ -180,45 +221,68 @@ async def _llm_with_cooldown(messages: list[dict]) -> str:
     return result
 
 
-async def llm_extract_requirements(title: str, description: str) -> list[str]:
-    """Call LLM to extract 5-7 clean, concise requirement bullets."""
-    prompt = (
-        f"Extract the 5-7 most important technical requirements from this internship posting.\n"
-        f"Title: {title}\n\nDescription:\n{description[:3000]}\n\n"
-        "Return ONLY a JSON array of short strings, e.g.:\n"
-        '["Python 3.10+", "Experience with REST APIs", "Strong communication skills"]\n'
-        "Each string should be under 80 characters. No numbering, no bullets."
+_BATCH_SYSTEM = (
+    "You extract structured data from job postings. "
+    "Return ONLY valid JSON — no markdown fences, no explanations. "
+    "The JSON must be an array where each element has:\n"
+    '  "idx": integer (same as input),\n'
+    '  "requirements": array of 5-8 short strings (domain-specific skills, under 70 chars each),\n'
+    '  "keywords": array of 8-15 important keywords for resume/ATS matching (tools, frameworks, '
+    "domain terms — be domain-aware: for chemical engineering include HYSYS, ASPEN, thermodynamics; "
+    "for finance include Excel, Bloomberg, DCF; for software include language names, frameworks),\n"
+    '  "summary": one sentence, domain-specific, describing what the intern will do day-to-day.'
+)
+
+
+async def llm_enrich_batch(
+    postings_batch: list[tuple[int, str, str]],
+) -> dict[int, dict[str, Any]]:
+    """
+    Send up to LLM_BATCH_SIZE postings in one call.
+    postings_batch: list of (idx, title, description[:2000])
+    Returns: {idx: {requirements, keywords, summary}}
+    """
+    import json as _json
+
+    lines: list[str] = []
+    for idx, title, desc in postings_batch:
+        lines.append(f"[{idx}] Title: {title}\nDescription: {desc[:1800]}")
+    user_msg = (
+        f"Analyse these {len(postings_batch)} internship postings and return a JSON array "
+        f"with one object per posting:\n\n" + "\n\n---\n\n".join(lines)
     )
+
     try:
         raw = await _llm_with_cooldown([
-            {"role": "system", "content": "You extract job requirements as a JSON array. Return only the JSON array, nothing else."},
-            {"role": "user", "content": prompt},
+            {"role": "system", "content": _BATCH_SYSTEM},
+            {"role": "user", "content": user_msg},
         ])
-        # Parse the JSON array robustly
-        match = re.search(r"\[.*\]", raw, re.DOTALL)
-        if match:
-            import json
-            items = json.loads(match.group())
-            return [str(i).strip() for i in items if isinstance(i, str)][:8]
+        # Strip markdown fences if present
+        raw = re.sub(r"^```[a-z]*\n?", "", raw.strip())
+        raw = re.sub(r"\n?```$", "", raw.strip())
+        items = _json.loads(raw)
+        result: dict[int, dict[str, Any]] = {}
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            idx_val = int(item.get("idx", -1))
+            if idx_val < 0:
+                continue
+            result[idx_val] = {
+                "requirements": [str(r).strip() for r in item.get("requirements", []) if r][:8],
+                "keywords": [str(k).strip() for k in item.get("keywords", []) if k][:15],
+                "summary": str(item.get("summary", "")).strip(),
+            }
+        return result
     except Exception as exc:  # noqa: BLE001
-        logger.warning("llm_extract_requirements failed: %s", exc)
-    return []
+        logger.warning("llm_enrich_batch failed (batch_size=%d): %s", len(postings_batch), exc)
+        return {}
 
 
-async def llm_summarise_posting(title: str, description: str) -> str:
-    """Generate a 2-sentence plain-text summary of what the intern will do."""
-    prompt = (
-        f"Write a 2-sentence plain-text summary of what an intern in this role will do day-to-day.\n"
-        f"Be specific and honest. Title: {title}\n\nDescription:\n{description[:2000]}"
-    )
-    try:
-        return (await _llm_with_cooldown([
-            {"role": "system", "content": "You summarise job postings in exactly 2 sentences. No preamble."},
-            {"role": "user", "content": prompt},
-        ])).strip()
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("llm_summarise_posting failed: %s", exc)
-        return ""
+async def llm_extract_requirements(title: str, description: str) -> list[str]:
+    """Single-posting fallback (used when batch returns no result for this posting)."""
+    result = await llm_enrich_batch([(0, title, description)])
+    return result.get(0, {}).get("requirements", [])
 
 
 # ---------------------------------------------------------------------------
@@ -342,6 +406,8 @@ async def run_postings_pipeline(
 
         llm_calls = 0
 
+        # Phase A: Per-posting clean + quality gate (no LLM)
+        needs_llm: list[Posting] = []
         for p in postings:
             try:
                 changed = False
@@ -353,7 +419,6 @@ async def run_postings_pipeline(
                         p.description = cleaned
                         changed = True
                     else:
-                        # Too short after stripping — mark stale so it drops out of feed
                         p.status = "stale"
                         db.add(p)
                         await db.commit()
@@ -374,19 +439,16 @@ async def run_postings_pipeline(
                     skipped += 1
                     continue
 
-                # Backfill requirements if empty / thin
+                # Heuristic requirement extraction (no LLM quota used)
                 reqs = p.requirements or []
-                if len(reqs) < POSTING_MAX_REQUIREMENTS_EMPTY and use_llm and llm_calls < MAX_LLM_ENRICH_PER_RUN:
+                if len(reqs) < POSTING_MAX_REQUIREMENTS_EMPTY:
                     desc = p.description or ""
-                    # First try heuristic — cheaper
-                    new_reqs = extract_requirements_from_text(desc)
-                    if len(new_reqs) < 3 and len(desc) > 200:  # noqa: PLR2004
-                        logger.info("  LLM extracting requirements: %s", p.title[:60])
-                        new_reqs = await llm_extract_requirements(p.title or "", desc)
-                        llm_calls += 1
-                    if new_reqs:
-                        p.requirements = new_reqs
+                    heuristic_reqs = extract_requirements_from_text(desc)
+                    if heuristic_reqs:
+                        p.requirements = heuristic_reqs
                         changed = True
+                    elif use_llm and len(desc) > 200 and llm_calls < MAX_LLM_ENRICH_PER_RUN:  # noqa: PLR2004
+                        needs_llm.append(p)
 
                 if changed:
                     db.add(p)
@@ -397,6 +459,75 @@ async def run_postings_pipeline(
                 logger.warning("post-process failed posting_id=%s: %s", p.id, exc)
                 await db.rollback()
                 errors += 1
+
+        # Phase B: Batched LLM enrichment for postings that need it
+        # Batching 5 per call dramatically reduces token usage vs 1-per-call
+        if needs_llm:
+            logger.info("Batched LLM enrichment for %d postings (%d calls)…",
+                        len(needs_llm), -(-len(needs_llm) // LLM_BATCH_SIZE))
+
+        batch_input: list[tuple[int, str, str]] = [
+            (i, p.title or "", p.description or "")
+            for i, p in enumerate(needs_llm)
+        ]
+        for batch_start in range(0, len(batch_input), LLM_BATCH_SIZE):
+            if llm_calls >= MAX_LLM_ENRICH_PER_RUN:
+                logger.info("LLM cap (%d) reached — stopping enrichment", MAX_LLM_ENRICH_PER_RUN)
+                break
+            batch = batch_input[batch_start : batch_start + LLM_BATCH_SIZE]
+            titles_str = ", ".join(t for _, t, _ in batch)
+            logger.info("  LLM batch [%d-%d]: %s", batch_start, batch_start + len(batch) - 1, titles_str[:100])
+            try:
+                results = await llm_enrich_batch(batch)
+                llm_calls += 1
+                for local_idx, _, _ in batch:
+                    if local_idx not in results:
+                        continue
+                    p = needs_llm[local_idx]
+                    enrichment = results[local_idx]
+                    changed = False
+                    if enrichment.get("requirements"):
+                        p.requirements = enrichment["requirements"]
+                        changed = True
+                    # Store keywords + summary in decode_cache for immediate ATS use
+                    if enrichment.get("keywords") or enrichment.get("summary"):
+                        existing_cache = p.decode_cache or {}
+                        cache_update = {
+                            "requirements": p.requirements or [],
+                            "keywords": enrichment.get("keywords", existing_cache.get("keywords", [])),
+                            "summary": enrichment.get("summary", existing_cache.get("summary", "")),
+                        }
+                        p.decode_cache = cache_update
+                        changed = True
+                    if changed:
+                        db.add(p)
+                        enriched += 1
+                await db.commit()
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("llm batch failed: %s", exc)
+                await db.rollback()
+                errors += 1
+
+        # Phase C: Backfill embeddings for postings that have none
+        from app.llm.embeddings import embed as _embed
+        unembedded = [p for p in postings if p.embedding is None and p.status == "active"]
+        if unembedded:
+            logger.info("Backfilling embeddings for %d postings without vectors…", len(unembedded))
+            for p in unembedded:
+                try:
+                    text = f"{p.title}. {(p.description or '')[:800]}"
+                    vecs = await _embed([text])
+                    if vecs:
+                        p.embedding = vecs[0]
+                        db.add(p)
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning("embed backfill failed posting_id=%s: %s", p.id, exc)
+            try:
+                await db.commit()
+                logger.info("Embeddings backfilled for %d postings.", len(unembedded))
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("embed backfill commit failed: %s", exc)
+                await db.rollback()
 
     logger.info("Post-process done — enriched=%d  skipped=%d  errors=%d  llm_calls=%d",
                 enriched, skipped, errors, llm_calls)

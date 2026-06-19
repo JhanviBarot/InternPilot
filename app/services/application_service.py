@@ -290,9 +290,29 @@ class ApplicationService(BaseService):
     # ats_score — DETERMINISTIC, no LLM
     # ------------------------------------------------------------------
 
+    def _ats_keywords(self, posting: Posting) -> list[str]:
+        """Return the best available keyword list for ATS scoring.
+
+        Priority: decode_cache (LLM-extracted, most comprehensive) → requirements
+        (pipeline-extracted, often sparse) → empty (vacuously 100 score).
+        """
+        if posting.decode_cache and isinstance(posting.decode_cache, dict):
+            cache = posting.decode_cache
+            # Combine keywords + requirements from cache, dedupe preserving order
+            seen: set[str] = set()
+            result: list[str] = []
+            for k in list(cache.get("keywords", [])) + list(cache.get("requirements", [])):
+                kl = str(k).strip().lower()
+                if kl and kl not in seen:
+                    seen.add(kl)
+                    result.append(str(k).strip())
+            if result:
+                return result
+        return [str(r) for r in (posting.requirements or [])]
+
     async def ats_score(self, posting_id: uuid.UUID, content: str) -> dict[str, Any]:
         posting = await self._get_posting(posting_id)
-        keywords = [str(r) for r in (posting.requirements or [])]
+        keywords = self._ats_keywords(posting)
         score, missing = _compute_ats(keywords, content)
         return {"ats_score": score, "missing_keywords": missing}
 
@@ -402,7 +422,7 @@ class ApplicationService(BaseService):
             logger.exception("draft LLM call failed: %s", exc)
             raise APIError(500, "DRAFT_FAILED", "Failed to generate draft") from exc
 
-        keywords = [str(r) for r in (posting.requirements or [])]
+        keywords = self._ats_keywords(posting)
         ats, missing = _compute_ats(keywords, content_text)
         gs = _grounding_score(content_text, keywords, skills, project_techs, experience_text)
 

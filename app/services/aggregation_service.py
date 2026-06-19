@@ -241,8 +241,11 @@ class AggregationService:
             dedup_key=dedup_key,
         )
 
-        # 5. Compute and store embedding
-        embed_text = f"{posting.title} {' '.join(str(r) for r in posting.requirements or [])}"
+        # 5. Compute and store embedding — use rich description text, not sparse requirements
+        embed_text = (
+            f"{posting.title} at {raw['company_name']}. "
+            f"{posting.description[:800]}"
+        )
         try:
             vectors = await embed([embed_text])
             if vectors:

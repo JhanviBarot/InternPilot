@@ -29,3 +29,14 @@ class DigestResponse(BaseModel):
     recent_responses: int
     ghosts_avoided: int
     platform_iq: float
+
+
+class CohortCompany(BaseModel):
+    company_name: str
+    response_rate: float       # 0..1 — historical responsiveness_score from Company table
+    applied_count: int         # how many users in cohort applied here
+    note: str                  # one-line context shown on card
+
+
+class CohortResponse(BaseModel):
+    companies: list[CohortCompany]

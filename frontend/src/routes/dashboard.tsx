@@ -33,6 +33,7 @@ function Dashboard() {
 
 function DashboardInner({ d, notifications: initialNotifications }: { d: DashboardSummary; notifications: Notification[] }) {
   const [notifications, setNotifications] = useState<Notification[]>(initialNotifications);
+  const cohort = useApi(() => api.getCohortCompanies(), []);
   useEffect(() => { setNotifications(initialNotifications); }, [initialNotifications]);
 
   const markRead = async (id: string) => {
@@ -101,12 +102,17 @@ function DashboardInner({ d, notifications: initialNotifications }: { d: Dashboa
         <div className="card-soft p-8">
           <div className="text-xs uppercase tracking-[0.14em] text-muted-foreground">Cohort intelligence</div>
           <h2 className="mt-1 font-display text-2xl">Where peers like you converted.</h2>
-          <ul className="mt-5 space-y-3 text-sm">
-            <Row company="Linear" rate="38%" note="alum-referred resumes" />
-            <Row company="Ramp" rate="29%" note="platform-team applications" />
-            <Row company="Vercel" rate="11%" note="cold applies — try referral" />
-            <Row company="Anthropic" rate="22%" note="research engineer track" />
-          </ul>
+          {cohort.loading && <div className="mt-5 text-xs text-muted-foreground">Loading cohort data…</div>}
+          {!cohort.loading && (!cohort.data || cohort.data.length === 0) && (
+            <p className="mt-5 text-xs text-muted-foreground italic">No cohort data yet — stats appear as peers apply and get responses.</p>
+          )}
+          {!cohort.loading && cohort.data && cohort.data.length > 0 && (
+            <ul className="mt-5 space-y-3 text-sm">
+              {cohort.data.slice(0, 4).map((c) => (
+                <Row key={c.company_name} company={c.company_name} rate={`${Math.round(c.response_rate * 100)}%`} note={c.note} />
+              ))}
+            </ul>
+          )}
         </div>
         <div className="card-soft p-8">
           <div className="text-xs uppercase tracking-[0.14em] text-muted-foreground">Recent activity · digest</div>

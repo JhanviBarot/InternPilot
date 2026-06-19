@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_db
 from app.core.security import get_current_user
 from app.models.user import User
-from app.schemas.dashboard import DashboardSummary, DigestResponse
+from app.schemas.dashboard import CohortResponse, DashboardSummary, DigestResponse
 from app.services.dashboard_service import DashboardService
 
 router = APIRouter(tags=["dashboard"])
@@ -27,3 +27,11 @@ async def get_digest(
     db: AsyncSession = Depends(get_db),
 ) -> DigestResponse:
     return await DashboardService(db, current_user.id).get_digest()
+
+
+@router.get("/dashboard/cohort", response_model=CohortResponse)
+async def get_cohort(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> CohortResponse:
+    return await DashboardService(db, current_user.id).get_cohort_companies()

@@ -1,5 +1,5 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
-import { useState } from "react";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { useState, useRef } from "react";
 import { CalmBackground } from "@/components/live-background";
 import { Nav } from "@/components/nav";
 import { api, useApi } from "@/lib/api-client";
@@ -28,8 +28,13 @@ function Assistant() {
       <CalmBackground />
       <Nav />
       <main className="mx-auto max-w-7xl px-6 py-12">
-        {loading && <LoadingState label="Decoding posting" />}
+        {loading && <LoadingState label="Loading matches" />}
         {error && <ErrorState error={error} onRetry={reload} />}
+        {!loading && !error && !m && (
+          <div className="text-center py-24 text-muted-foreground">
+            No match selected. <Link to="/feed" className="underline">Browse the feed</Link> and open a posting first.
+          </div>
+        )}
         {!loading && !error && m && <AssistantInner m={m} />}
       </main>
     </div>
@@ -37,7 +42,11 @@ function Assistant() {
 }
 
 function AssistantInner({ m }: { m: Match }) {
+  const navigate = useNavigate();
   const [nonce, setNonce] = useState(0);
+  const [submitting, setSubmitting] = useState(false);
+  const [submitted, setSubmitted] = useState(false);
+  const draftRef = useRef<HTMLDivElement>(null);
 
   // Decode posting: LLM-extracted summary + canonical requirements + resume keywords
   const { data: decoded } = useApi(
@@ -51,12 +60,24 @@ function AssistantInner({ m }: { m: Match }) {
     [m.posting.id, nonce],
   );
 
-  const atsScore = draft?.ats_score ? draft.ats_score : Math.round(70 + m.match_score * 25);
-  const missing = draft?.missing_keywords?.length
-    ? draft.missing_keywords
-    : (m.missing_skills.length ? m.missing_skills : ["Yjs", "OT operations"]);
+  const atsScore = draft?.ats_score ?? 0;
+  const missing = draft?.missing_keywords ?? [];
   const summary = decoded?.summary || m.posting.description;
   const requirements = decoded?.requirements?.length ? decoded.requirements : m.posting.requirements;
+
+  const handleReviewAndSend = async () => {
+    if (!draft?.artifact_id || submitting || submitted) return;
+    setSubmitting(true);
+    try {
+      const app = await api.createApplication(m.posting.id, "portal", draft.artifact_id);
+      await api.setApplicationStatus(app.id, "applied");
+      setSubmitted(true);
+      setTimeout(() => navigate({ to: "/tracker" }), 800);
+    } catch (err) {
+      console.error("Failed to submit application:", err);
+      setSubmitting(false);
+    }
+  };
 
   return (
     <div className="grid gap-8 md:grid-cols-[420px_1fr]">
@@ -71,26 +92,45 @@ function AssistantInner({ m }: { m: Match }) {
         <div className="card-soft p-6">
           <div className="flex items-center justify-between">
             <div className="text-xs uppercase tracking-[0.14em] text-muted-foreground">ATS score</div>
-            <div className="font-mono text-sm" style={{ color: "var(--color-primary)" }}>{atsScore} / 100</div>
+            <div className="font-mono text-sm" style={{ color: atsScore >= 70 ? "var(--color-primary)" : atsScore >= 40 ? "var(--color-warm)" : "#e44" }}>
+              {draftLoading ? "—" : `${atsScore} / 100`}
+            </div>
           </div>
           <div className="mt-3 h-2 rounded-full bg-secondary overflow-hidden" role="meter" aria-valuemin={0} aria-valuemax={100} aria-valuenow={atsScore}>
-            <div className="h-full rounded-full" style={{ width: `${atsScore}%`, background: "var(--color-primary)" }} />
+            <div
+              className="h-full rounded-full transition-all duration-700"
+              style={{
+                width: draftLoading ? "0%" : `${atsScore}%`,
+                background: atsScore >= 70 ? "var(--color-primary)" : atsScore >= 40 ? "var(--color-warm)" : "#e44",
+              }}
+            />
           </div>
-          <div className="mt-5 text-xs uppercase tracking-[0.14em] text-muted-foreground">Missing keywords</div>
-          <div className="mt-2 flex flex-wrap gap-1.5">
-            {missing.map((k) => <Pill key={k} tone="warm">{k}</Pill>)}
-          </div>
+          {missing.length > 0 && (
+            <>
+              <div className="mt-5 text-xs uppercase tracking-[0.14em] text-muted-foreground">Missing keywords</div>
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                {missing.map((k) => <Pill key={k} tone="warm">{k}</Pill>)}
+              </div>
+            </>
+          )}
+          {!draftLoading && missing.length === 0 && atsScore > 0 && (
+            <p className="mt-3 text-xs text-muted-foreground">All key terms covered.</p>
+          )}
         </div>
 
         <div className="card-soft p-6">
           <div className="text-xs uppercase tracking-[0.14em] text-muted-foreground">Job summary</div>
           <p className="mt-2 text-sm leading-relaxed">{summary}</p>
-          <div className="mt-4 text-xs uppercase tracking-[0.14em] text-muted-foreground">Requirements</div>
-          <ul className="mt-2 text-sm space-y-1.5">
-            {requirements.map((r) => (
-              <li key={r} className="flex gap-2"><Check className="h-3.5 w-3.5 mt-1 shrink-0" style={{ color: "var(--color-primary)" }} />{r}</li>
-            ))}
-          </ul>
+          {requirements.length > 0 && (
+            <>
+              <div className="mt-4 text-xs uppercase tracking-[0.14em] text-muted-foreground">Requirements</div>
+              <ul className="mt-2 text-sm space-y-1.5">
+                {requirements.map((r) => (
+                  <li key={r} className="flex gap-2"><Check className="h-3.5 w-3.5 mt-1 shrink-0" style={{ color: "var(--color-primary)" }} />{r}</li>
+                ))}
+              </ul>
+            </>
+          )}
         </div>
       </aside>
 
@@ -103,48 +143,46 @@ function AssistantInner({ m }: { m: Match }) {
           <div className="flex gap-2">
             <button
               onClick={() => setNonce((n) => n + 1)}
-              disabled={draftLoading}
+              disabled={draftLoading || submitting}
               className="inline-flex items-center gap-1.5 rounded-full border bg-white px-3 py-1.5 text-xs hover:bg-secondary disabled:opacity-60"
               style={{ borderColor: "var(--color-hairline)" }}
             >
               <RefreshCw className={`h-3.5 w-3.5 ${draftLoading ? "animate-spin" : ""}`} /> Regenerate
             </button>
-            <button className="inline-flex items-center gap-1.5 rounded-full bg-primary text-primary-foreground px-4 py-1.5 text-xs font-medium hover:bg-[color:var(--primary-hover)]">
-              <Send className="h-3.5 w-3.5" /> Review &amp; send
+            <button
+              onClick={handleReviewAndSend}
+              disabled={!draft?.artifact_id || draftLoading || submitting || submitted}
+              className="inline-flex items-center gap-1.5 rounded-full bg-primary text-primary-foreground px-4 py-1.5 text-xs font-medium hover:bg-[color:var(--primary-hover)] disabled:opacity-60"
+            >
+              {submitted ? (
+                <><Check className="h-3.5 w-3.5" /> Submitted</>
+              ) : submitting ? (
+                <><RefreshCw className="h-3.5 w-3.5 animate-spin" /> Submitting…</>
+              ) : (
+                <><Send className="h-3.5 w-3.5" /> Review &amp; send</>
+              )}
             </button>
           </div>
         </div>
 
         {draftLoading ? (
           <div className="card-soft mt-6 p-10 flex items-center justify-center min-h-[320px]">
-            <LoadingState label="Drafting cover letter" />
+            <LoadingState label="Drafting cover letter — analysing job description and your profile…" />
           </div>
         ) : draft?.content ? (
-          <div className="card-soft mt-6 p-10 leading-relaxed text-[15px] font-display"
-               contentEditable suppressContentEditableWarning>
+          <div
+            ref={draftRef}
+            className="card-soft mt-6 p-10 leading-relaxed text-[15px] font-display"
+            contentEditable
+            suppressContentEditableWarning
+          >
             {draft.content.split("\n\n").map((para, i) => (
               <p key={i} className={i > 0 ? "mt-4" : ""}>{para}</p>
             ))}
           </div>
         ) : (
-          <div className="card-soft mt-6 p-10 leading-relaxed text-[15px] font-display"
-               contentEditable suppressContentEditableWarning>
-            <p>Hi {m.posting.company.name} team,</p>
-            <p className="mt-4">
-              I&apos;ve been pulling at the same threads your {m.posting.title.toLowerCase()} team is working on. In <em>rustpad-mini</em> I shipped a CRDT-backed
-              editor in Rust + WASM with conflict-free cursor sync — the same problem space, just at a much smaller scale.
-              The tradeoffs around presence under network partition are still on my mind.
-            </p>
-            <p className="mt-4">
-              Most recently at Replicate I shipped 14 PRs to the inference tooling, optimizing a hot serving path that cut p95 latency
-              by 38%. I care about the same things you publicly care about: a calm interface, tight feedback loops, and code that
-              doesn&apos;t apologize for itself.
-            </p>
-            <p className="mt-4">
-              I&apos;d love to spend the summer on the {m.posting.title.toLowerCase().includes("editor") ? "editor" : "platform"} surface.
-              I&apos;m also happy to take a small async take-home if it&apos;d be useful.
-            </p>
-            <p className="mt-4">— Maya</p>
+          <div className="card-soft mt-6 p-10 flex items-center justify-center min-h-[320px] text-muted-foreground text-sm">
+            Draft will appear here once your profile and the posting are loaded.
           </div>
         )}
 
