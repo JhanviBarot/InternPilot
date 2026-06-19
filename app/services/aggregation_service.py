@@ -22,12 +22,14 @@ from app.llm.embeddings import embed
 from app.models.company import Company
 from app.models.posting import Posting
 from app.schemas.posting import PostingSchema, coerce_posting_schema
+from app.sources.adzuna import AdzunaSource
 from app.sources.ashby import AshbySource
 from app.sources.base import RawPosting, Source
 from app.sources.greenhouse import GreenhouseSource
 from app.sources.normalize import normalize, normalize_company_name
 from app.sources.remoteok import RemoteOKSource
 from app.sources.remotive import RemotiveSource
+from app.sources.usajobs import USAJobsSource
 
 logger = logging.getLogger(__name__)
 
@@ -46,6 +48,8 @@ class AggregationService:
             AshbySource(),
             RemoteOKSource(),
             RemotiveSource(),
+            USAJobsSource(),   # all-field government internships (requires USAJOBS_API_KEY)
+            AdzunaSource(),    # cross-industry aggregator (requires ADZUNA_APP_ID/KEY)
         ]
 
         # Fetch all sources concurrently; a single failing source must not abort the run

@@ -37,6 +37,17 @@ class Settings(BaseSettings):
     # Aggregation — when True only ingest postings whose title contains "intern"
     INTERNSHIP_FILTER: bool = True
 
+    # USAJobs API — federal internships across ALL fields (optional)
+    # Register free at https://developer.usajobs.gov/
+    USAJOBS_API_KEY: str = ""
+    USAJOBS_EMAIL: str = ""     # the email used to register
+
+    # Adzuna API — cross-industry aggregator (optional)
+    # Register free at https://developer.adzuna.com/
+    ADZUNA_APP_ID: str = ""
+    ADZUNA_APP_KEY: str = ""
+    ADZUNA_COUNTRY: str = "us"  # us | gb | de | au | in | ca
+
     # CORS — comma-separated string in env, parsed to list
     CORS_ORIGINS: str = "http://localhost:3000"
 

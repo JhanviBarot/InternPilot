@@ -73,6 +73,8 @@ class Posting(Base, TimestampMixin):
     source_sightings: Mapped[int] = mapped_column(
         Integer, nullable=False, default=1, server_default="1"
     )
+    # Cached decode result — populated on first /applications/decode call, reused forever after
+    decode_cache: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True, default=None)
     # Internal only — never in API responses
     embedding: Mapped[list[float] | None] = mapped_column(
         Vector(EMBEDDING_DIM), nullable=True, default=None

@@ -229,19 +229,34 @@ class ApplicationService(BaseService):
         )
 
     # ------------------------------------------------------------------
-    # decode — ONE LLM call
+    # decode — ONE LLM call, cached per posting in decode_cache column
     # ------------------------------------------------------------------
 
     async def decode(self, posting_id: uuid.UUID) -> dict[str, Any]:
         from app.llm.router import complete
 
         posting = await self._get_posting(posting_id)
+
+        # Return cached result if available — decode depends only on the posting,
+        # never on the user, so one call serves all users forever.
+        if posting.decode_cache and isinstance(posting.decode_cache, dict):
+            cached = posting.decode_cache
+            if cached.get("requirements") is not None and cached.get("summary"):
+                return {
+                    "requirements": [str(r) for r in cached.get("requirements", [])],
+                    "keywords": [str(k) for k in cached.get("keywords", [])],
+                    "summary": str(cached.get("summary", "")),
+                }
+
         reqs_json = json.dumps(list(posting.requirements or []))
         prompt = (
             "Analyze this job description and return a JSON object with exactly these keys:\n"
-            '- "requirements": list of specific skills/qualifications required (strings)\n'
-            '- "keywords": list of important keywords and technologies for a résumé/cover letter (strings)\n'
-            '- "summary": 1-2 sentence summary of what this role is really looking for\n\n'
+            '- "requirements": list of 5-8 specific skills/qualifications required (concise strings, '
+            "under 60 chars each — e.g. 'Python 3.10+', 'REST API design', 'Strong communication')\n"
+            '- "keywords": list of important keywords and technologies for a résumé/cover letter '
+            "(strings — tools, frameworks, domain terms)\n"
+            '- "summary": 2-sentence plain-text summary of what this role is really looking for '
+            "(domain-specific, not generic — mention the field explicitly)\n\n"
             f"Job title: {posting.title}\n"
             f"Description: {posting.description[:3000]}\n"
             f"Listed requirements: {reqs_json}\n\n"
@@ -254,11 +269,22 @@ class ApplicationService(BaseService):
             logger.exception("decode LLM call failed: %s", exc)
             raise APIError(500, "DECODE_FAILED", "Failed to decode job description") from exc
 
-        return {
+        result = {
             "requirements": [str(r) for r in data.get("requirements", [])],
             "keywords": [str(k) for k in data.get("keywords", [])],
             "summary": str(data.get("summary", "")),
         }
+
+        # Persist the decoded result so the next request (any user) is served from cache
+        try:
+            posting.decode_cache = result
+            self.db.add(posting)
+            await self.db.commit()
+        except Exception as cache_exc:  # noqa: BLE001
+            logger.warning("decode_cache write failed (non-fatal): %s", cache_exc)
+            await self.db.rollback()
+
+        return result
 
     # ------------------------------------------------------------------
     # ats_score — DETERMINISTIC, no LLM
