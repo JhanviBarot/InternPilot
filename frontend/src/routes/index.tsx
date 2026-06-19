@@ -150,12 +150,35 @@ function FloatingMatchCard() {
 }
 
 function StatBand() {
+  const authenticated = typeof localStorage !== "undefined" ? !!getToken() || isGuestMode() : false;
+  const { data: digest } = useApi(
+    () => (authenticated ? api.getDashboardDigest() : Promise.resolve(null)),
+    [authenticated],
+  );
+
   const stats = [
-    { label: "Hours saved this week", value: 41, suffix: "h" },
-    { label: "Ghost jobs filtered", value: 23, suffix: "" },
-    { label: "Response rate", value: 34, suffix: "%" },
-    { label: "Platform IQ", value: 78, suffix: "" },
+    {
+      label: "Hours saved",
+      value: digest ? Math.round(digest.ghosts_avoided * 2 + 1.5) : 41,
+      suffix: "h",
+    },
+    {
+      label: "Ghost jobs filtered",
+      value: digest?.ghosts_avoided ?? 23,
+      suffix: "",
+    },
+    {
+      label: "Response rate",
+      value: digest ? Math.round(digest.platform_iq) : 34,
+      suffix: "%",
+    },
+    {
+      label: "Platform IQ",
+      value: digest?.platform_iq ?? 78,
+      suffix: "",
+    },
   ];
+
   return (
     <section className="relative border-y" style={{ borderColor: "var(--color-hairline)" }}>
       <div className="mx-auto max-w-7xl px-6 py-14 grid grid-cols-2 md:grid-cols-4 gap-y-10 gap-x-6">

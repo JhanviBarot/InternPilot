@@ -41,6 +41,7 @@ function PitchInner({ o }: { o: ResearchOpportunity }) {
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [drafting, setDrafting] = useState(false);
+  const { data: profile } = useApi(() => api.getProfile(), []);
 
   const regenerate = async () => {
     setDrafting(true);
@@ -126,7 +127,10 @@ function PitchInner({ o }: { o: ResearchOpportunity }) {
         </div>
 
         <p className="mt-3 text-xs text-muted-foreground">
-          Grounded in: rustpad-mini · Replicate inference PRs · paper-mind. You approve every send — we never email professors for you.
+          {profile?.projects?.length
+            ? `Grounded in: ${profile.projects.slice(0, 3).map((p) => p.name).join(" · ")} · `
+            : "Grounded in your profile · "}
+          You approve every send — we never email professors for you.
         </p>
       </section>
     </div>

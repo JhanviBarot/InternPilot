@@ -748,6 +748,11 @@ export const api = {
     }
     await delay(); return dashboardSummary;
   },
+  async getDashboardDigest(): Promise<{ new_matches: number; followup_due: number; recent_responses: number; ghosts_avoided: number; platform_iq: number }> {
+    if (!shouldUseMocks()) return http("/dashboard/digest");
+    await delay();
+    return { new_matches: 3, followup_due: 1, recent_responses: 0, ghosts_avoided: 23, platform_iq: 78 };
+  },
   async getNotifications(): Promise<Notification[]> {
     if (!shouldUseMocks()) return http<Notification[]>("/notifications");
     await delay(); return _notifications;
