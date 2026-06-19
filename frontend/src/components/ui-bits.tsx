@@ -4,22 +4,27 @@ export function MatchRing({ value, size = 64, label }: { value: number; size?: n
   const pct = Math.round(value * 100);
   const r = (size - 8) / 2;
   const c = 2 * Math.PI * r;
+  const noData = pct === 0;
   return (
     <div className="relative grid place-items-center" style={{ width: size, height: size }}>
       <svg width={size} height={size} className="-rotate-90">
         <circle cx={size / 2} cy={size / 2} r={r} stroke="var(--color-hairline)" strokeWidth="4" fill="none" />
-        <circle
-          cx={size / 2} cy={size / 2} r={r}
-          stroke="var(--color-primary)" strokeWidth="4" fill="none"
-          strokeLinecap="round"
-          strokeDasharray={c}
-          strokeDashoffset={c - (c * pct) / 100}
-          style={{ transition: "stroke-dashoffset .9s cubic-bezier(.22,1,.36,1)" }}
-        />
+        {!noData && (
+          <circle
+            cx={size / 2} cy={size / 2} r={r}
+            stroke="var(--color-primary)" strokeWidth="4" fill="none"
+            strokeLinecap="round"
+            strokeDasharray={c}
+            strokeDashoffset={c - (c * pct) / 100}
+            style={{ transition: "stroke-dashoffset .9s cubic-bezier(.22,1,.36,1)" }}
+          />
+        )}
       </svg>
       <div className="absolute inset-0 grid place-items-center">
         <div className="text-center leading-none">
-          <div className="font-mono text-[13px] font-semibold">{pct}%</div>
+          <div className={`font-mono text-[13px] font-semibold ${noData ? "text-muted-foreground" : ""}`}>
+            {noData ? "—" : `${pct}%`}
+          </div>
           {label && <div className="text-[9px] uppercase tracking-wider text-muted-foreground mt-0.5">{label}</div>}
         </div>
       </div>

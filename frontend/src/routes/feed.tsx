@@ -5,7 +5,7 @@ import { Nav } from "@/components/nav";
 import { api, useApi } from "@/lib/api-client";
 import { GhostBadge, MatchRing, Pill } from "@/components/ui-bits";
 import { LoadingState, EmptyState, ErrorState } from "@/components/data-states";
-import { ArrowUpRight, SlidersHorizontal, Users, MapPin, DollarSign, Ghost, FlaskConical, Briefcase, Sparkles, Link2 } from "lucide-react";
+import { ArrowUpRight, SlidersHorizontal, Users, MapPin, DollarSign, Ghost, FlaskConical, Briefcase, Sparkles, Link2, UserCircle } from "lucide-react";
 import { motion } from "framer-motion";
 import type { Match, ResearchOpportunity } from "@/lib/mocks";
 
@@ -172,6 +172,19 @@ function CompanyFeed() {
             <SlidersHorizontal className="h-4 w-4" /> Re-rank
           </button>
         </div>
+
+        {/* Profile completeness banner — shown when no match scores yet */}
+        {!loading && list.length > 0 && list.every((m) => m.match_score === 0) && (
+          <Link to="/onboarding" className="mt-4 flex items-center gap-3 rounded-xl border p-4 hover:bg-secondary transition"
+                style={{ borderColor: "color-mix(in oklab, var(--color-primary) 35%, transparent)", background: "color-mix(in oklab, var(--color-primary) 6%, white)" }}>
+            <UserCircle className="h-8 w-8 shrink-0" style={{ color: "var(--color-primary)" }} />
+            <div>
+              <div className="font-medium text-sm" style={{ color: "var(--color-primary)" }}>Upload your résumé to unlock personalized match scores</div>
+              <div className="text-xs text-muted-foreground mt-0.5">Right now you're seeing postings ranked by freshness. Once your profile is built, each card gets a real % match based on your skills and experience.</div>
+            </div>
+            <ArrowUpRight className="h-4 w-4 ml-auto shrink-0" style={{ color: "var(--color-primary)" }} />
+          </Link>
+        )}
 
         <div className="mt-6 grid gap-5">
           {loading && <LoadingState label="Scoring matches" />}

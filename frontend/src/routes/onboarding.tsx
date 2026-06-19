@@ -353,15 +353,25 @@ function OnboardingInner({ initialProfile }: { initialProfile: Profile }) {
           <h2 className="font-display text-xl">Connect GitHub</h2>
           <p className="text-sm text-muted-foreground mt-1">We read your repos to ground every application in your real work.</p>
           {githubDone ? (
-            <div className="mt-5 space-y-2">
-              <div className="flex items-center gap-2 text-sm" style={{ color: "var(--color-primary)" }}>
+            <div className="mt-5 space-y-4">
+              <div className="flex items-center gap-2 text-sm font-medium" style={{ color: "var(--color-primary)" }}>
                 <Check className="h-4 w-4" /> GitHub connected — {githubUrl || profile.github_url}
               </div>
               {profile.skills.length > 0 && (
-                <div className="text-xs text-muted-foreground">
-                  Detected languages/skills: {profile.skills.slice(0, 8).join(", ")}
+                <div className="rounded-xl border p-4" style={{ borderColor: "var(--color-hairline)" }}>
+                  <div className="text-xs uppercase tracking-[0.14em] text-muted-foreground mb-2">Languages detected from repos</div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {profile.skills.slice(0, 15).map((s) => <Pill key={s}>{s}</Pill>)}
+                    {profile.skills.length > 15 && <span className="text-xs text-muted-foreground self-center">+{profile.skills.length - 15} more</span>}
+                  </div>
                 </div>
               )}
+              <button
+                onClick={() => setGithubDone(false)}
+                className="text-xs text-muted-foreground underline"
+              >
+                Connect a different account
+              </button>
             </div>
           ) : (
             <div className="mt-5 flex gap-2">
@@ -555,11 +565,39 @@ function OnboardingInner({ initialProfile }: { initialProfile: Profile }) {
       </div>
 
       {/* Sidebar */}
-      <aside className="card-soft p-8 h-fit sticky top-24">
-        <div className="text-xs uppercase tracking-[0.18em] text-muted-foreground font-mono">Profile strength</div>
-        <StrengthMeter value={profile.profile_strength} />
+      <aside className="card-soft p-8 h-fit sticky top-24 space-y-6">
+        <div>
+          <div className="text-xs uppercase tracking-[0.18em] text-muted-foreground font-mono">Profile strength</div>
+          <StrengthMeter value={profile.profile_strength} />
+        </div>
+
+        {/* What AI extracted — show as a quick snapshot */}
+        <div className="rounded-xl p-4 space-y-2.5" style={{ background: "var(--color-surface)" }}>
+          <div className="text-xs uppercase tracking-[0.14em] text-muted-foreground">What we know about you</div>
+          <ProfileStat label="Skills" count={profile.skills.length} good={profile.skills.length >= 5} hint="upload résumé" />
+          <ProfileStat label="Work experience" count={profile.experience.length} good={profile.experience.length >= 1} hint="upload résumé" />
+          <ProfileStat label="Education" count={profile.education.length} good={profile.education.length >= 1} hint="upload résumé" />
+          <ProfileStat label="Projects" count={profile.projects.length} good={profile.projects.length >= 2} hint="connect GitHub" />
+          <div className="flex items-center justify-between text-xs">
+            <span className="text-muted-foreground">GitHub</span>
+            {profile.github_url
+              ? <span className="font-medium" style={{ color: "var(--color-primary)" }}>Connected</span>
+              : <span className="text-muted-foreground italic">not connected</span>}
+          </div>
+        </div>
+
+        {profile.skills.length > 0 && (
+          <div>
+            <div className="text-xs uppercase tracking-[0.14em] text-muted-foreground mb-2">Top skills</div>
+            <div className="flex flex-wrap gap-1.5">
+              {profile.skills.slice(0, 12).map((s) => <Pill key={s}>{s}</Pill>)}
+              {profile.skills.length > 12 && <span className="text-xs text-muted-foreground self-center">+{profile.skills.length - 12} more</span>}
+            </div>
+          </div>
+        )}
+
         {profile.gaps.length > 0 && (
-          <div className="mt-6">
+          <div>
             <div className="text-sm font-medium flex items-center gap-2">
               <Sparkles className="h-4 w-4" style={{ color: "var(--color-primary)" }} /> Know your gaps
             </div>
@@ -570,9 +608,10 @@ function OnboardingInner({ initialProfile }: { initialProfile: Profile }) {
             </ul>
           </div>
         )}
+
         <Link
           to="/feed"
-          className="mt-8 w-full inline-flex items-center justify-center gap-2 rounded-full bg-primary px-5 py-3 text-sm font-medium text-primary-foreground hover:bg-[color:var(--primary-hover)]"
+          className="w-full inline-flex items-center justify-center gap-2 rounded-full bg-primary px-5 py-3 text-sm font-medium text-primary-foreground hover:bg-[color:var(--primary-hover)]"
         >
           See my match feed <ArrowRight className="h-4 w-4" />
         </Link>
@@ -623,6 +662,19 @@ function TagInput({
           <Plus className="h-3.5 w-3.5" />
         </button>
       </div>
+    </div>
+  );
+}
+
+function ProfileStat({ label, count, good, hint }: { label: string; count: number; good: boolean; hint: string }) {
+  return (
+    <div className="flex items-center justify-between text-xs">
+      <span className="text-muted-foreground">{label}</span>
+      {count > 0
+        ? <span className={`font-mono font-semibold ${good ? "" : "text-[color:var(--color-warm)]"}`} style={good ? { color: "var(--color-primary)" } : {}}>
+            {count} {good ? "✓" : ""}
+          </span>
+        : <span className="italic text-muted-foreground">{hint}</span>}
     </div>
   );
 }
