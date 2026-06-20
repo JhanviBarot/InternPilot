@@ -187,7 +187,7 @@ export function Footer() {
                 GitHub
               </a>
             </li>
-            <li><Link to="/auth" className="hover:text-foreground">Contact</Link></li>
+            <li><Link to="/contact" className="hover:text-foreground">Contact</Link></li>
           </ul>
         </div>
       </div>
