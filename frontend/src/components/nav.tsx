@@ -1,5 +1,5 @@
 import { Link, useNavigate } from "@tanstack/react-router";
-import { Compass, LogOut, User, ChevronDown, Github } from "lucide-react";
+import { Compass, LogOut, User, ChevronDown } from "lucide-react";
 import { useState, useEffect, useRef } from "react";
 import { getStoredUser, authLogout, isGuestMode, type User as AppUser } from "@/lib/api-client";
 
@@ -146,7 +146,7 @@ export function Footer() {
   return (
     <footer className="mt-32 border-t border-hairline" style={{ borderColor: "var(--color-hairline)" }}>
       <div className="mx-auto max-w-7xl px-6 py-16 grid gap-12 md:grid-cols-4">
-        <div className="md:col-span-2">
+        <div className="md:col-span-1">
           <div className="flex items-center gap-2">
             <span className="grid h-8 w-8 place-items-center rounded-full bg-primary text-primary-foreground">
               <Compass className="h-4 w-4" />
@@ -173,18 +173,26 @@ export function Footer() {
             <li><Link to="/referrals" search={{ posting_id: undefined }} className="hover:text-foreground">Referrals</Link></li>
           </ul>
         </div>
+        <div className="text-sm">
+          <div className="font-medium mb-3">Company</div>
+          <ul className="space-y-2 text-muted-foreground">
+            <li><Link to="/blog" className="hover:text-foreground">Blog</Link></li>
+            <li>
+              <a
+                href="https://github.com/Om-5640/InternPilot"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="hover:text-foreground"
+              >
+                GitHub
+              </a>
+            </li>
+            <li><Link to="/auth" className="hover:text-foreground">Contact</Link></li>
+          </ul>
+        </div>
       </div>
-      <div className="mx-auto max-w-7xl px-6 pb-10 text-xs text-muted-foreground flex items-center justify-between">
-        <span>© 2026 InternPilot</span>
-        <a
-          href="https://github.com/Om-5640/InternPilot"
-          target="_blank"
-          rel="noopener noreferrer"
-          className="inline-flex items-center gap-1.5 hover:text-foreground transition-colors"
-        >
-          <Github className="h-3.5 w-3.5" />
-          GitHub
-        </a>
+      <div className="mx-auto max-w-7xl px-6 pb-10 text-xs text-muted-foreground flex items-center justify-between border-t pt-8" style={{ borderColor: "var(--color-hairline)" }}>
+        <span>© 2026 InternPilot. Built at the DAU AI Club Buildathon.</span>
         <span className="font-mono">v0.9 · platform IQ rising</span>
       </div>
     </footer>

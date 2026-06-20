@@ -1,6 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { motion } from "framer-motion";
-import { ArrowRight, ShieldCheck, Users, Sparkles, FileText, Send, BarChart3, Ghost, Check, GitBranch } from "lucide-react";
+import { ArrowRight, ShieldCheck, Users, Sparkles, FileText, Send, BarChart3, Ghost, Check, GitBranch, BookOpen } from "lucide-react";
 import { LiveBackground } from "@/components/live-background";
 import { Nav, Footer } from "@/components/nav";
 import { AnimatedCounter, Reveal } from "@/components/motion-primitives";
@@ -29,6 +29,7 @@ function Landing() {
       <HowItWorks />
       <PlatformIQ />
       <Quotes />
+      <BlogTeaser />
       <CTA />
       <Footer />
     </div>
@@ -547,6 +548,71 @@ function Quotes() {
           </Reveal>
         ))}
       </div>
+    </section>
+  );
+}
+
+function BlogTeaser() {
+  return (
+    <section className="mx-auto max-w-7xl px-6 py-20 border-t" style={{ borderColor: "var(--color-hairline)" }}>
+      <Reveal>
+        <SectionLabel icon={BookOpen}>From the blog</SectionLabel>
+      </Reveal>
+      <Reveal delay={0.06}>
+        <Link to="/blog" className="group mt-10 flex flex-col md:flex-row gap-0 rounded-2xl border overflow-hidden hover:shadow-lg transition-shadow"
+              style={{ borderColor: "var(--color-hairline)" }}>
+          {/* Left — accent stripe */}
+          <div className="hidden md:flex flex-col justify-between p-10 min-w-[260px] max-w-[320px]"
+               style={{ background: "linear-gradient(160deg, var(--color-primary) 0%, #0A4838 100%)" }}>
+            <div>
+              <span className="text-[10px] uppercase tracking-[0.22em] font-medium" style={{ color: "rgba(250,248,244,0.55)" }}>
+                Origin story
+              </span>
+              <div className="mt-4 font-display text-2xl font-medium leading-snug" style={{ color: "#FAF8F4" }}>
+                How it started
+              </div>
+            </div>
+            <span className="inline-flex items-center gap-2 text-sm font-medium mt-8 transition-transform group-hover:translate-x-1"
+                  style={{ color: "rgba(250,248,244,0.8)" }}>
+              Read the story <ArrowRight className="h-4 w-4" />
+            </span>
+          </div>
+
+          {/* Right — content */}
+          <div className="flex-1 bg-white p-8 md:p-10 flex flex-col justify-between gap-6">
+            <div>
+              <h3 className="font-display text-2xl md:text-3xl font-medium leading-snug tracking-tight text-balance">
+                How a WhatsApp Rant Turned Into InternPilot
+              </h3>
+              <p className="mt-4 text-muted-foreground leading-relaxed max-w-xl">
+                One annoyed screenshot. A group chat that moved on in two minutes. A question from a senior
+                that reframed the whole week. The honest story of what we built, what broke, what we cut,
+                and what we'd do differently.
+              </p>
+            </div>
+            <div className="flex flex-wrap items-center gap-3">
+              {["Ghost-job detection", "Embeddings", "Grounding", "7-day build"].map((tag) => (
+                <span key={tag} className="text-xs rounded-full border px-3 py-1 text-muted-foreground"
+                      style={{ borderColor: "var(--color-hairline)" }}>
+                  {tag}
+                </span>
+              ))}
+              <span className="ml-auto text-xs text-muted-foreground flex items-center gap-1.5">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                  <circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" />
+                </svg>
+                10 min read
+              </span>
+            </div>
+
+            {/* Mobile CTA */}
+            <span className="md:hidden inline-flex items-center gap-2 text-sm font-medium"
+                  style={{ color: "var(--color-primary)" }}>
+              Read the story <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" />
+            </span>
+          </div>
+        </Link>
+      </Reveal>
     </section>
   );
 }

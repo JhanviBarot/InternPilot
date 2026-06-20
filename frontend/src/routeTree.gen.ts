@@ -9,6 +9,7 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as BlogRouteImport } from './routes/blog'
 import { Route as TrackerRouteImport } from './routes/tracker'
 import { Route as ReferralsRouteImport } from './routes/referrals'
 import { Route as PitchRouteImport } from './routes/pitch'
@@ -20,6 +21,11 @@ import { Route as AuthRouteImport } from './routes/auth'
 import { Route as AssistantRouteImport } from './routes/assistant'
 import { Route as IndexRouteImport } from './routes/index'
 
+const BlogRoute = BlogRouteImport.update({
+  id: '/blog',
+  path: '/blog',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const TrackerRoute = TrackerRouteImport.update({
   id: '/tracker',
   path: '/tracker',
@@ -75,6 +81,7 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/assistant': typeof AssistantRoute
   '/auth': typeof AuthRoute
+  '/blog': typeof BlogRoute
   '/dashboard': typeof DashboardRoute
   '/feed': typeof FeedRoute
   '/onboarding': typeof OnboardingRoute
@@ -87,6 +94,7 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/assistant': typeof AssistantRoute
   '/auth': typeof AuthRoute
+  '/blog': typeof BlogRoute
   '/dashboard': typeof DashboardRoute
   '/feed': typeof FeedRoute
   '/onboarding': typeof OnboardingRoute
@@ -100,6 +108,7 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/assistant': typeof AssistantRoute
   '/auth': typeof AuthRoute
+  '/blog': typeof BlogRoute
   '/dashboard': typeof DashboardRoute
   '/feed': typeof FeedRoute
   '/onboarding': typeof OnboardingRoute
@@ -114,6 +123,7 @@ export interface FileRouteTypes {
     | '/'
     | '/assistant'
     | '/auth'
+    | '/blog'
     | '/dashboard'
     | '/feed'
     | '/onboarding'
@@ -126,6 +136,7 @@ export interface FileRouteTypes {
     | '/'
     | '/assistant'
     | '/auth'
+    | '/blog'
     | '/dashboard'
     | '/feed'
     | '/onboarding'
@@ -138,6 +149,7 @@ export interface FileRouteTypes {
     | '/'
     | '/assistant'
     | '/auth'
+    | '/blog'
     | '/dashboard'
     | '/feed'
     | '/onboarding'
@@ -151,6 +163,7 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AssistantRoute: typeof AssistantRoute
   AuthRoute: typeof AuthRoute
+  BlogRoute: typeof BlogRoute
   DashboardRoute: typeof DashboardRoute
   FeedRoute: typeof FeedRoute
   OnboardingRoute: typeof OnboardingRoute
@@ -225,6 +238,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AssistantRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/blog': {
+      id: '/blog'
+      path: '/blog'
+      fullPath: '/blog'
+      preLoaderRoute: typeof BlogRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/': {
       id: '/'
       path: '/'
@@ -239,6 +259,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AssistantRoute: AssistantRoute,
   AuthRoute: AuthRoute,
+  BlogRoute: BlogRoute,
   DashboardRoute: DashboardRoute,
   FeedRoute: FeedRoute,
   OnboardingRoute: OnboardingRoute,
