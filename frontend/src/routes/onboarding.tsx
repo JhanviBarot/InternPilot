@@ -92,6 +92,7 @@ function OnboardingInner({ initialProfile }: { initialProfile: Profile }) {
   const [resumeError, setResumeError] = useState<string | null>(null);
   const [resumeDone, setResumeDone] = useState(hasResumeData);
   const [extractedSummary, setExtractedSummary] = useState<string | null>(null);
+  const [dragOver, setDragOver] = useState(false);
 
   // GitHub state
   const [githubConnecting, setGithubConnecting] = useState(false);
@@ -163,6 +164,20 @@ function OnboardingInner({ initialProfile }: { initialProfile: Profile }) {
   const handleResumeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    gateAction(() => setResumeFile(file));
+  };
+
+  const handleDrop = (e: React.DragEvent<HTMLLabelElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragOver(false);
+    const file = e.dataTransfer.files?.[0];
+    if (!file) return;
+    if (!file.name.match(/\.(pdf|docx)$/i)) {
+      setResumeError("Only PDF or DOCX files are accepted.");
+      return;
+    }
+    setResumeError(null);
     gateAction(() => setResumeFile(file));
   };
 
@@ -330,8 +345,12 @@ function OnboardingInner({ initialProfile }: { initialProfile: Profile }) {
           ) : (
             <>
               <label
-                className="mt-5 block rounded-xl border border-dashed p-10 text-center cursor-pointer hover:bg-secondary transition focus-within:ring-2 focus-within:ring-[color:var(--ring)]"
-                style={{ borderColor: "var(--color-hairline)" }}
+                className={`mt-5 block rounded-xl border border-dashed p-10 text-center cursor-pointer transition focus-within:ring-2 focus-within:ring-[color:var(--ring)] ${dragOver ? "bg-[color-mix(in_oklab,var(--color-primary)_6%,white)]" : "hover:bg-secondary"}`}
+                style={{ borderColor: dragOver ? "var(--color-primary)" : "var(--color-hairline)" }}
+                onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+                onDragEnter={(e) => { e.preventDefault(); setDragOver(true); }}
+                onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setDragOver(false); }}
+                onDrop={handleDrop}
               >
                 <input
                   ref={fileInputRef}
@@ -340,9 +359,10 @@ function OnboardingInner({ initialProfile }: { initialProfile: Profile }) {
                   className="sr-only"
                   onChange={handleResumeChange}
                 />
-                <Upload className="mx-auto h-6 w-6 text-muted-foreground" />
+                <Upload className={`mx-auto h-6 w-6 transition-colors ${dragOver ? "" : "text-muted-foreground"}`}
+                        style={dragOver ? { color: "var(--color-primary)" } : {}} />
                 <div className="mt-3 text-sm">
-                  {resumeFile ? resumeFile.name : "Drop your résumé here, or click to browse"}
+                  {resumeFile ? resumeFile.name : dragOver ? "Release to upload" : "Drop your résumé here, or click to browse"}
                 </div>
                 <div className="mt-1 text-xs text-muted-foreground font-mono">
                   {resumeFile ? `${(resumeFile.size / 1024).toFixed(0)} KB` : "PDF · DOCX · max 5 MB"}
