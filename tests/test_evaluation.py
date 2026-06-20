@@ -288,17 +288,12 @@ def test_platform_iq_null_ghost_uses_zero_credit() -> None:
 
 
 @pytest.mark.asyncio
-async def test_evaluate_now_persists_row(db: AsyncSession, client: AsyncClient, auth_headers: dict) -> None:
-    """evaluate_now() should persist one Evaluation row even with 0 outcomes."""
-    resp = await client.post(RUN_URL, headers=auth_headers)
-    # Non-admin → 403 with regular auth_headers
-    assert resp.status_code == 403
-    assert resp.json()["error"]["code"] == "FORBIDDEN"
-
-
-@pytest.mark.asyncio
 async def test_run_endpoint_admin_only(client: AsyncClient, db: AsyncSession) -> None:
-    """POST /run requires admin role."""
+    """POST /run requires admin role: student gets 403, then admin gets 202 with row (#23 #24).
+
+    Also validates evaluate_now() idempotency: repeated calls with no outcomes
+    return the same insufficient_data row rather than accumulating duplicates (#22).
+    """
     # Sign up a student
     r = await client.post(SIGNUP_URL, json={"name": "S", "email": "stud@ex.com", "password": "pass1234"})
     assert r.status_code == 201
@@ -308,6 +303,7 @@ async def test_run_endpoint_admin_only(client: AsyncClient, db: AsyncSession) ->
     # Student → 403
     resp = await client.post(RUN_URL, headers=student_headers)
     assert resp.status_code == 403
+    assert resp.json()["error"]["code"] == "FORBIDDEN"
 
     # Promote to admin directly in DB
     u = (await db.execute(select(User).where(User.email == "stud@ex.com"))).scalar_one()
@@ -316,12 +312,18 @@ async def test_run_endpoint_admin_only(client: AsyncClient, db: AsyncSession) ->
     await db.commit()
 
     # Admin → 202 with Evaluation row
-    resp = await client.post(RUN_URL, headers=student_headers)
-    assert resp.status_code == 202
-    data = resp.json()
-    assert "latest" in data
-    assert data["latest"]["n_outcomes"] == 0  # no outcomes seeded yet
-    assert data["latest"]["platform_iq"] == pytest.approx(0.0)
+    resp1 = await client.post(RUN_URL, headers=student_headers)
+    assert resp1.status_code == 202
+    data1 = resp1.json()
+    assert "latest" in data1
+    assert data1["latest"]["n_outcomes"] == 0  # no outcomes seeded yet
+    assert data1["latest"]["platform_iq"] == pytest.approx(0.0)
+    first_id = data1["latest"]["id"]
+
+    # Second call with still no outcomes → must reuse the same row (idempotency #22)
+    resp2 = await client.post(RUN_URL, headers=student_headers)
+    assert resp2.status_code == 202
+    assert resp2.json()["latest"]["id"] == first_id
 
 
 @pytest.mark.asyncio

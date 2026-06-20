@@ -6,6 +6,7 @@ recording an outcome to update the company's cross-user signal.
 from __future__ import annotations
 
 import logging
+import re
 import uuid
 from datetime import UTC, datetime
 from typing import Any
@@ -234,8 +235,15 @@ class TrackerService(BaseService):
             temperature=0.6,
         )
 
-        # Basic sanity: verify company name and role appear in the output
-        if company.name.lower() not in content.lower() or posting.title.lower() not in content.lower():
+        # Sanity: word-boundary match to avoid false positives from short words like "AI"/"AWS" (#5)
+        def _all_words_present(phrase: str, text: str) -> bool:
+            text_lower = text.lower()
+            return all(
+                re.search(r"\b" + re.escape(w.lower()) + r"\b", text_lower)
+                for w in phrase.split()
+            )
+
+        if not _all_words_present(company.name, content) or not _all_words_present(posting.title, content):
             logger.warning(
                 "followup draft missing company/role name — regenerating: posting_id=%s", app.posting_id
             )
@@ -284,6 +292,21 @@ class TrackerService(BaseService):
 
         app = await self._get_application_owned(application_id)
 
+        # Guard against duplicate outcomes (#18) — only the latest is scored by
+        # evaluate_now(), so silently overwriting would mislead the user.
+        existing_outcome = (
+            await self.db.execute(
+                select(Outcome).where(Outcome.application_id == application_id)
+            )
+        ).scalar_one_or_none()
+        if existing_outcome is not None:
+            raise APIError(
+                409,
+                "OUTCOME_ALREADY_RECORDED",
+                "An outcome has already been recorded for this application. "
+                "Only one outcome per application is accepted for calibration accuracy.",
+            )
+
         outcome = Outcome(
             application_id=application_id,
             outcome_type=outcome_type,
@@ -313,9 +336,10 @@ class TrackerService(BaseService):
         else:
             await self.db.commit()
 
-        # Expire only the outcomes relationship so the next GET re-runs the
-        # selectinload secondary query. (expire_on_commit=False means SQLAlchemy
-        # would otherwise serve the cached empty list from the identity map.)
+        # Re-fetch to confirm the write was committed (#3).
+        # Also re-expires the outcomes relationship so the next GET re-runs the
+        # selectinload secondary query.
+        await self.db.refresh(app)
         self.db.expire(app, attribute_names=["outcomes"])
 
         return outcome

@@ -116,6 +116,9 @@ def score(
     g_preds = [int(g) for g in ghost_preds]
     preds_binary = [1 if p >= 0.5 else 0 for p in response_probs]  # noqa: PLR2004
 
+    # Brier measures calibration on raw probabilities; accuracy uses a 0.5 threshold.
+    # These can diverge when predictions cluster near 0.5 — Brier is the
+    # authoritative metric for platform_iq; accuracy is informational (#16).
     brier = float(brier_score_loss(y_resp, response_probs))
     accuracy = float(accuracy_score(y_resp, preds_binary))
 
@@ -264,6 +267,11 @@ class EvaluationService:
         pairs = await self._fetch_all_pairs()
 
         if not pairs:
+            # Idempotent: reuse the existing insufficient_data marker rather than
+            # accumulating duplicate zero-metric rows on every call (#22).
+            existing = await self.get_latest_formula()
+            if existing and existing.model_version == "insufficient_data":
+                return existing
             row = self._persist(
                 MetricResult(0.0, None, 0.0, 0.0, 0.0, 0.0, insufficient=True),
                 iq=0.0,
@@ -320,6 +328,9 @@ class EvaluationService:
         train_pool = pairs[:-test_n]
         test_set = pairs[-test_n:]
 
+        # Defensive: ensure split invariants hold even if MIN_TOTAL or TEST_FRAC change (#15)
+        assert len(test_set) >= 2, f"build_history: test set too small ({len(test_set)} pairs)"
+
         # Honesty guardrail: fixed test set must be disjoint from the entire training pool
         train_ids = {a.id for a, _ in train_pool}
         test_ids = {a.id for a, _ in test_set}
@@ -334,6 +345,11 @@ class EvaluationService:
             prefix_n = max(2, len(train_pool) * k // N_PREFIXES)
             prefix = train_pool[:prefix_n]
 
+            # Defensive: each prefix must have at least 2 samples for LogisticRegression (#14)
+            assert len(prefix) >= 2, (
+                f"build_history: prefix k={k} has {len(prefix)} samples (need ≥ 2)"
+            )
+
             # Guardrail: each prefix must also be disjoint from the test set
             prefix_ids = {a.id for a, _ in prefix}
             assert not (prefix_ids & test_ids), (
@@ -346,7 +362,11 @@ class EvaluationService:
 
             m = score(calibrated, ghost_preds_test, responded_test)
 
-            # IQ trend = response-calibration score (the component that trains on outcomes)
+            # IQ trend uses response-calibration only: IQ_k = 100×(1−Brier).
+            # This INTENTIONALLY differs from evaluate_now()'s weighted formula
+            # (W_RESP×(1−brier) + W_GHOST×ghost_f1) because ghost detection is
+            # rule-based and doesn't improve with more training data. The trend
+            # curve isolates the one component that genuinely learns (#19).
             iq = (
                 max(0.0, min(100.0, 100.0 * (1.0 - m.response_brier)))
                 if not m.insufficient
@@ -354,8 +374,8 @@ class EvaluationService:
             )
 
             version = f"logreg_n{prefix_n}"
-            # Use microsecond offset so get_history_rows() ORDER BY run_at is stable
-            row = self._persist(m, iq, prefix_n, base_run_at + timedelta(microseconds=k), version)
+            # Use second-level offset so ordering is stable even on millisecond-precision DBs (#26)
+            row = self._persist(m, iq, prefix_n, base_run_at + timedelta(seconds=k), version)
             rows.append(row)
             logger.info(
                 "build_history: k=%d prefix_n=%d brier=%s iq=%.2f",

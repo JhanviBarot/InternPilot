@@ -27,8 +27,12 @@ const COLS: { key: ApplicationStatus; label: string }[] = [
   { key: "responded", label: "Responded" },
   { key: "interview", label: "Interview" },
   { key: "offer", label: "Offer" },
+  { key: "rejected", label: "Rejected" },
   { key: "ghosted", label: "Ghosted" },
 ];
+
+// Terminal states: clicking does NOT advance the card — explicit to avoid silent failures (#10)
+const TERMINAL_STATUSES: ReadonlySet<ApplicationStatus> = new Set(["offer", "rejected", "ghosted"]);
 
 function Tracker() {
   const { data, loading, error, reload } = useApi(() => api.getApplications(), []);
@@ -36,10 +40,11 @@ function Tracker() {
   useEffect(() => { if (data) setLocal(data); }, [data]);
 
   const advance = async (a: Application) => {
+    if (TERMINAL_STATUSES.has(a.status)) return;
     const order: ApplicationStatus[] = ["saved", "applied", "viewed", "responded", "interview", "offer"];
     const idx = order.indexOf(a.status);
-    const next = idx >= 0 && idx < order.length - 1 ? order[idx + 1] : a.status;
-    if (next === a.status) return;
+    if (idx < 0 || idx >= order.length - 1) return;
+    const next = order[idx + 1];
     setLocal((cur) => cur.map((x) => x.id === a.id ? { ...x, status: next } : x));
     await api.setApplicationStatus(a.id, next);
   };
@@ -81,7 +86,8 @@ function Tracker() {
                           key={a.id}
                           onClick={() => advance(a)}
                           className="w-full text-left card-soft card-lift p-3.5 focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--ring)]"
-                          aria-label={`${a.posting.title} — click to advance status`}
+                          aria-label={TERMINAL_STATUSES.has(a.status) ? `${a.posting.title} — terminal status` : `${a.posting.title} — click to advance status`}
+                          aria-disabled={TERMINAL_STATUSES.has(a.status)}
                         >
                           <div className="text-sm font-medium leading-snug">{a.posting.title}</div>
                           <div className="text-xs text-muted-foreground mt-0.5">{a.posting.company_name}</div>

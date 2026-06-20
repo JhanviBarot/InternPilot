@@ -682,3 +682,108 @@ async def test_gmail_sync_detects_reply(
         )
     )
     assert outcome_result.scalar_one_or_none() is not None
+
+
+# ---------------------------------------------------------------------------
+# 23. Multiple applications on the same posting — both persist (#11)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_multiple_applications_same_posting(
+    client: AsyncClient, auth_headers: dict, db: AsyncSession
+) -> None:
+    """Two applications for the same posting coexist (re-apply after rejection use case)."""
+    user_result = await db.execute(select(User).where(User.email == "test@example.com"))
+    user = user_result.scalar_one()
+
+    company = await _make_company(db)
+    posting = await _make_posting(db, company.id)
+    app1 = await _make_application(db, user.id, posting.id, status="applied")
+    app2 = await _make_application(db, user.id, posting.id, status="applied")
+    await db.commit()
+
+    assert app1.id != app2.id
+
+    resp = await client.get("/api/applications", headers=auth_headers)
+    assert resp.status_code == 200
+    ids_returned = {item["id"] for item in resp.json()["data"]}
+    assert str(app1.id) in ids_returned
+    assert str(app2.id) in ids_returned
+
+
+# ---------------------------------------------------------------------------
+# 24. Duplicate outcome recording returns 409 (#12 / #18)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_record_outcome_duplicate_raises_409(
+    client: AsyncClient, auth_headers: dict, db: AsyncSession
+) -> None:
+    """Recording a second outcome for the same application raises OUTCOME_ALREADY_RECORDED."""
+    user_result = await db.execute(select(User).where(User.email == "test@example.com"))
+    user = user_result.scalar_one()
+
+    company = await _make_company(db)
+    posting = await _make_posting(db, company.id)
+    app = await _make_application(db, user.id, posting.id, status="applied")
+    await db.commit()
+
+    # First outcome — succeeds
+    resp1 = await client.post(
+        f"/api/applications/{app.id}/outcome",
+        json={"outcome_type": "responded", "responded": True},
+        headers=auth_headers,
+    )
+    assert resp1.status_code == 201
+
+    # Second outcome on the same application — must be rejected
+    resp2 = await client.post(
+        f"/api/applications/{app.id}/outcome",
+        json={"outcome_type": "no_response", "responded": False},
+        headers=auth_headers,
+    )
+    assert resp2.status_code == 409
+    assert resp2.json()["error"]["code"] == "OUTCOME_ALREADY_RECORDED"
+
+
+# ---------------------------------------------------------------------------
+# 25. draft_followup — word-boundary sanity check doesn't false-positive on
+#     short company/role names like "AI" or "AWS" (#5)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_draft_followup_short_name_word_boundary(
+    client: AsyncClient, auth_headers: dict, db: AsyncSession
+) -> None:
+    """Word-boundary matching: company 'AI' must not match 'email' or 'detail'."""
+    user_result = await db.execute(select(User).where(User.email == "test@example.com"))
+    user = user_result.scalar_one()
+
+    company = await _make_company(db, name="AI")
+    posting = await _make_posting(db, company.id)
+    app = await _make_application(db, user.id, posting.id, status="applied")
+    await db.commit()
+
+    # "AI" must appear as a word, not as a substring inside another word.
+    email_missing_ai = "Dear Hiring Manager, I am emailing about the Software Intern position at your company."
+    email_with_ai = "Dear Hiring Manager, I am excited about AI and the Software Intern role at AI."
+
+    with patch(
+        "app.llm.router.complete",
+        new_callable=AsyncMock,
+        side_effect=[email_missing_ai, email_with_ai],
+    ):
+        resp = await client.post(
+            f"/api/applications/{app.id}/followup",
+            headers=auth_headers,
+        )
+
+    # The service should have regenerated (first call didn't have word-boundary "AI"),
+    # then returned the second draft which does have "AI" as a standalone word.
+    assert resp.status_code == 200
+    artifact = resp.json()["artifact"]
+    assert artifact["type"] == "followup"
+    assert "AI" in artifact["content"]
