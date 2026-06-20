@@ -1,10 +1,10 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { CalmBackground } from "@/components/live-background";
 import { Nav } from "@/components/nav";
 import { api, useApi } from "@/lib/api-client";
 import { LoadingState, EmptyState, ErrorState } from "@/components/data-states";
-import { FlaskConical, ChevronDown } from "lucide-react";
+import { FlaskConical, ChevronDown, Check } from "lucide-react";
 import type { ResearchOutreach, ResearchOutreachStatus } from "@/lib/mocks";
 
 export const Route = createFileRoute("/outreach")({
@@ -22,14 +22,14 @@ const STATUSES: { k: ResearchOutreachStatus; label: string }[] = [
   { k: "no_response", label: "No response" },
 ];
 
-// State machine: mirrors backend OUTREACH_TRANSITIONS (#30)
+// Allowed transitions (forward + backward revert paths)
 const ALLOWED_NEXT: Record<ResearchOutreachStatus, ReadonlySet<ResearchOutreachStatus>> = {
   suggested:   new Set(["drafted", "contacted", "no_response"]),
   drafted:     new Set(["contacted", "suggested", "no_response"]),
   contacted:   new Set(["replied", "no_response"]),
-  replied:     new Set(["accepted", "declined"]),
-  accepted:    new Set(),
-  declined:    new Set(["contacted"]),
+  replied:     new Set(["accepted", "declined", "contacted"]),
+  accepted:    new Set(["replied"]),
+  declined:    new Set(["contacted", "replied"]),
   no_response: new Set(["contacted"]),
 };
 
@@ -115,24 +115,65 @@ function Outreach() {
 }
 
 function StatusPicker({ status, onChange }: { status: ResearchOutreachStatus; onChange: (s: ResearchOutreachStatus) => void }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
   const tone = TONE[status];
-  const allowed = ALLOWED_NEXT[status];
+  const label = STATUSES.find((s) => s.k === status)?.label ?? status;
+
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    if (open) document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [open]);
+
   return (
-    <div className="relative">
-      <select
-        value={status}
-        onChange={(e) => onChange(e.target.value as ResearchOutreachStatus)}
-        className="appearance-none w-full rounded-full px-3 py-1.5 pr-8 text-xs font-medium focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--ring)]"
+    <div ref={ref} className="relative">
+      <button
+        onClick={() => setOpen((o) => !o)}
+        className="inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-xs font-medium w-full focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--ring)] transition-opacity hover:opacity-90"
         style={{ background: tone.bg, color: tone.fg }}
-        aria-label="Status"
+        aria-haspopup="listbox"
+        aria-expanded={open}
       >
-        {STATUSES.map((s) => (
-          <option key={s.k} value={s.k} disabled={s.k !== status && !allowed.has(s.k)}>
-            {s.label}
-          </option>
-        ))}
-      </select>
-      <ChevronDown className="pointer-events-none h-3 w-3 absolute right-2.5 top-1/2 -translate-y-1/2" style={{ color: tone.fg }} />
+        <span className="flex-1 text-left">{label}</span>
+        <ChevronDown className={`h-3 w-3 shrink-0 transition-transform ${open ? "rotate-180" : ""}`} />
+      </button>
+
+      {open && (
+        <div
+          className="absolute top-full mt-1.5 left-0 z-50 w-44 rounded-2xl border bg-white py-1.5 shadow-lg"
+          style={{ borderColor: "var(--color-hairline)", boxShadow: "0 8px 24px -4px rgb(0 0 0 / 0.12)" }}
+          role="listbox"
+        >
+          {STATUSES.map((s) => {
+            const isCurrent = s.k === status;
+            const isAllowed = ALLOWED_NEXT[status].has(s.k);
+            const disabled = !isCurrent && !isAllowed;
+            const t = TONE[s.k];
+            return (
+              <button
+                key={s.k}
+                role="option"
+                aria-selected={isCurrent}
+                disabled={disabled}
+                onClick={() => { if (!disabled && !isCurrent) { onChange(s.k); } setOpen(false); }}
+                className={`w-full flex items-center gap-2.5 px-3 py-2 text-xs transition-colors ${
+                  isCurrent ? "font-medium" : disabled ? "opacity-30 cursor-not-allowed" : "hover:bg-secondary cursor-pointer"
+                }`}
+              >
+                <span
+                  className="h-2 w-2 rounded-full shrink-0"
+                  style={{ background: t.fg }}
+                />
+                <span className="flex-1 text-left" style={{ color: isCurrent ? t.fg : undefined }}>{s.label}</span>
+                {isCurrent && <Check className="h-3 w-3 shrink-0" style={{ color: t.fg }} />}
+              </button>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
