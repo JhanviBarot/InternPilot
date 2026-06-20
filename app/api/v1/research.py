@@ -122,12 +122,14 @@ async def create_research_outreach(
 
 @router.get("/research/outreach")
 async def list_research_outreach(
+    page: int = Query(default=1, ge=1),
+    limit: int = Query(default=50, ge=1, le=200),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, object]:
     svc = ResearchService(db, current_user.id)
-    outreach_list = await svc.list_outreach()
-    return {"data": [o.model_dump() for o in outreach_list]}
+    outreach_list, total = await svc.list_outreach(page=page, limit=limit)
+    return {"data": [o.model_dump() for o in outreach_list], "total": total, "page": page, "limit": limit}
 
 
 # ---------------------------------------------------------------------------

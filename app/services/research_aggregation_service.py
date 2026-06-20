@@ -395,8 +395,13 @@ async def _upsert_research_opportunity(
         vectors = await embed([embed_text])
         if vectors:
             embedding = vectors[0]
-    except Exception:  # noqa: BLE001
-        pass
+    except Exception as _emb_exc:  # noqa: BLE001
+        logger.warning(
+            "research_aggregation: embed() failed for '%s' — opportunity stored without embedding, "
+            "semantic matching will fall back to recency ranking until next refresh. Error: %s",
+            raw_ro.get("professor_name", "?"),
+            _emb_exc,
+        )
 
     # Parse posted_at from string if available
     _posted_at: datetime | None = None

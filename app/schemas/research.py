@@ -29,6 +29,7 @@ class ResearchOpportunitySchema(BaseModel):
     last_seen_at: datetime
     created_at: datetime
     recent_paper: RecentPaper | None = None
+    is_stale: bool = False
 
     model_config = {"from_attributes": True}
 
@@ -53,6 +54,8 @@ class ResearchOutreachSchema(BaseModel):
     research_opportunity_id: uuid.UUID
     status: str
     pitch_artifact_id: uuid.UUID | None
+    contacted_at: datetime | None = None
+    replied_at: datetime | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -65,6 +68,8 @@ class ResearchOutreachWithOpportunitySchema(BaseModel):
     opportunity: OutreachOpportunitySnippet
     status: str
     pitch_id: uuid.UUID | None
+    contacted_at: datetime | None
+    replied_at: datetime | None
     last_status_at: datetime
     created_at: datetime
 

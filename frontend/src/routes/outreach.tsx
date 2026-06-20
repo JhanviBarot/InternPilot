@@ -22,6 +22,17 @@ const STATUSES: { k: ResearchOutreachStatus; label: string }[] = [
   { k: "no_response", label: "No response" },
 ];
 
+// State machine: mirrors backend OUTREACH_TRANSITIONS (#30)
+const ALLOWED_NEXT: Record<ResearchOutreachStatus, ReadonlySet<ResearchOutreachStatus>> = {
+  suggested:   new Set(["drafted", "contacted", "no_response"]),
+  drafted:     new Set(["contacted", "suggested", "no_response"]),
+  contacted:   new Set(["replied", "no_response"]),
+  replied:     new Set(["accepted", "declined"]),
+  accepted:    new Set(),
+  declined:    new Set(["contacted"]),
+  no_response: new Set(["contacted"]),
+};
+
 const TONE: Record<ResearchOutreachStatus, { bg: string; fg: string }> = {
   suggested: { bg: "var(--color-secondary)", fg: "var(--color-foreground)" },
   drafted:   { bg: "color-mix(in oklab, var(--color-ghost) 14%, white)", fg: "color-mix(in oklab, var(--color-ghost) 80%, black)" },
@@ -31,6 +42,11 @@ const TONE: Record<ResearchOutreachStatus, { bg: string; fg: string }> = {
   declined:  { bg: "color-mix(in oklab, var(--color-reject) 14%, white)", fg: "var(--color-reject)" },
   no_response: { bg: "var(--color-secondary)", fg: "var(--color-muted-foreground)" },
 };
+
+function fmtDate(iso: string | null | undefined): string {
+  if (!iso) return "—";
+  return new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}
 
 function Outreach() {
   const { data, loading, error, reload } = useApi(() => api.getResearchOutreach(), []);
@@ -69,23 +85,25 @@ function Outreach() {
           )}
           {!loading && !error && local.length > 0 && (
             <div className="card-soft overflow-hidden">
-              <div className="grid grid-cols-[1.6fr_1fr_180px_120px] gap-4 px-6 py-3 border-b text-[10px] uppercase tracking-[0.18em] text-muted-foreground font-mono"
+              <div className="grid grid-cols-[1.6fr_1fr_180px_100px_100px] gap-4 px-6 py-3 border-b text-[10px] uppercase tracking-[0.18em] text-muted-foreground font-mono"
                    style={{ borderColor: "var(--color-hairline)" }}>
                 <span>Professor · lab</span>
                 <span>Institution</span>
                 <span>Status</span>
-                <span className="text-right">Last update</span>
+                <span>Contacted</span>
+                <span className="text-right">Added</span>
               </div>
               {local.map((r) => (
-                <div key={r.id} className="grid grid-cols-[1.6fr_1fr_180px_120px] gap-4 items-center px-6 py-4 border-b last:border-0"
+                <div key={r.id} className="grid grid-cols-[1.6fr_1fr_180px_100px_100px] gap-4 items-center px-6 py-4 border-b last:border-0"
                      style={{ borderColor: "var(--color-hairline)" }}>
                   <div className="min-w-0">
                     <div className="font-medium truncate">{r.opportunity.professor_name}</div>
-                    <div className="text-xs text-muted-foreground truncate">{r.opportunity.lab_name}</div>
+                    <div className="text-xs text-muted-foreground truncate">{r.opportunity.lab_name || r.opportunity.institution}</div>
                   </div>
                   <div className="text-sm text-muted-foreground truncate">{r.opportunity.institution}</div>
                   <StatusPicker status={r.status} onChange={(s) => setStatus(r.id, s)} />
-                  <div className="text-right text-xs text-muted-foreground font-mono">{new Date(r.last_status_at).toLocaleDateString(undefined, { month: "short", day: "numeric" })}</div>
+                  <div className="text-xs text-muted-foreground font-mono">{fmtDate(r.contacted_at)}</div>
+                  <div className="text-right text-xs text-muted-foreground font-mono">{fmtDate(r.last_status_at)}</div>
                 </div>
               ))}
             </div>
@@ -98,6 +116,7 @@ function Outreach() {
 
 function StatusPicker({ status, onChange }: { status: ResearchOutreachStatus; onChange: (s: ResearchOutreachStatus) => void }) {
   const tone = TONE[status];
+  const allowed = ALLOWED_NEXT[status];
   return (
     <div className="relative">
       <select
@@ -107,7 +126,11 @@ function StatusPicker({ status, onChange }: { status: ResearchOutreachStatus; on
         style={{ background: tone.bg, color: tone.fg }}
         aria-label="Status"
       >
-        {STATUSES.map((s) => <option key={s.k} value={s.k}>{s.label}</option>)}
+        {STATUSES.map((s) => (
+          <option key={s.k} value={s.k} disabled={s.k !== status && !allowed.has(s.k)}>
+            {s.label}
+          </option>
+        ))}
       </select>
       <ChevronDown className="pointer-events-none h-3 w-3 absolute right-2.5 top-1/2 -translate-y-1/2" style={{ color: tone.fg }} />
     </div>

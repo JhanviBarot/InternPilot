@@ -719,8 +719,8 @@ async def test_update_outreach_status_invalid_via_api(
         svc = ResearchService(db, user_id)
         outreach = await svc.create_outreach(opp.id)
 
-    resp = await client.patch(
-        f"/api/research/outreach/{outreach.id}/status",
+    resp = await client.put(
+        f"/api/research/outreach/{outreach.id}",
         json={"status": "FLYING_TO_MARS"},
         headers=auth_headers,
     )

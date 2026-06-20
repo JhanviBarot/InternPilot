@@ -17,11 +17,11 @@ from __future__ import annotations
 
 import logging
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from pgvector.sqlalchemy import Vector
-from sqlalchemy import Float, cast, literal, select
+from sqlalchemy import Float, cast, func, literal, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import APIError
@@ -29,7 +29,11 @@ from app.llm.embeddings import EMBEDDING_DIM, embed
 from app.models.artifact import Artifact
 from app.models.profile import Profile
 from app.models.research_opportunity import ResearchOpportunity
-from app.models.research_outreach import OUTREACH_STATUSES, ResearchOutreach
+from app.models.research_outreach import (
+    OUTREACH_STATUSES,
+    OUTREACH_TRANSITIONS,
+    ResearchOutreach,
+)
 from app.schemas.research import (
     OutreachOpportunitySnippet,
     RecentPaper,
@@ -48,6 +52,23 @@ SKILL_WEIGHT: float = 0.3
 GROUNDING_THRESHOLD: float = 0.7
 
 
+_STALE_DAYS = 60
+
+
+def _safe_skills(raw: Any) -> list[str]:
+    """Coerce desired_skills to list[str] regardless of DB storage quirks (#23)."""
+    if raw is None:
+        return []
+    if isinstance(raw, str):
+        import json
+        try:
+            parsed = json.loads(raw)
+            return [str(s) for s in parsed] if isinstance(parsed, list) else []
+        except (ValueError, TypeError):
+            return []
+    return [str(s) for s in raw]
+
+
 def _coerce_opportunity(opp: ResearchOpportunity) -> ResearchOpportunitySchema:
     recent_paper: RecentPaper | None = None
     if isinstance(opp.recent_paper, dict) and opp.recent_paper.get("title"):
@@ -55,6 +76,12 @@ def _coerce_opportunity(opp: ResearchOpportunity) -> ResearchOpportunitySchema:
             title=str(opp.recent_paper["title"]),
             year=int(opp.recent_paper.get("year", 0)),
         )
+    is_stale = False
+    if opp.posted_at is not None:
+        age = datetime.now(UTC) - (
+            opp.posted_at if opp.posted_at.tzinfo else opp.posted_at.replace(tzinfo=UTC)
+        )
+        is_stale = age.days > _STALE_DAYS
     return ResearchOpportunitySchema(
         id=opp.id,
         professor_name=opp.professor_name,
@@ -62,7 +89,7 @@ def _coerce_opportunity(opp: ResearchOpportunity) -> ResearchOpportunitySchema:
         lab_name=opp.lab_name,
         research_area=opp.research_area,
         description=opp.description,
-        desired_skills=[str(s) for s in (opp.desired_skills or [])],
+        desired_skills=_safe_skills(opp.desired_skills),
         program=opp.program,
         region=opp.region,
         contact_email=opp.contact_email,
@@ -72,6 +99,7 @@ def _coerce_opportunity(opp: ResearchOpportunity) -> ResearchOpportunitySchema:
         last_seen_at=opp.last_seen_at,
         created_at=opp.created_at,
         recent_paper=recent_paper,
+        is_stale=is_stale,
     )
 
 
@@ -143,7 +171,7 @@ class ResearchService(BaseService):
         profile_skills: list[str],
         top_interest: str,
     ) -> ResearchMatchSchema:
-        desired = [str(s) for s in (opp.desired_skills or [])]
+        desired = _safe_skills(opp.desired_skills)
         matched, missing = _compute_skill_overlap(profile_skills, desired)
         semantic_sim = max(0.0, 1.0 - cosine_dist)
         skill_ratio = 1.0 if not desired else len(matched) / len(desired)
@@ -236,6 +264,20 @@ class ResearchService(BaseService):
 
     async def get_match(self, opportunity_id: uuid.UUID) -> ResearchMatchSchema:
         opp = await self._get_opportunity(opportunity_id)
+
+        # Generate embedding on-demand if missing (#11)
+        if opp.embedding is None:
+            try:
+                embed_text = f"{opp.research_area} research. {opp.description[:600]}"
+                vectors = await embed([embed_text])
+                if vectors:
+                    opp.embedding = vectors[0]
+                    self.db.add(opp)
+                    await self.db.commit()
+                    await self.db.refresh(opp)
+            except Exception:
+                logger.warning("get_match: on-demand embed failed for opportunity %s", opportunity_id)
+
         profile = await self._get_profile()
 
         if profile is None or opp.embedding is None:
@@ -243,7 +285,7 @@ class ResearchService(BaseService):
                 [str(i) for i in (profile.research_interests or [])] if profile else []
             )
             top_interest = interests[0] if interests else "research"
-            desired = [str(s) for s in (opp.desired_skills or [])]
+            desired = _safe_skills(opp.desired_skills)
             return ResearchMatchSchema(
                 opportunity=_coerce_opportunity(opp),
                 fit_score=0.0,
@@ -254,7 +296,7 @@ class ResearchService(BaseService):
 
         interests = [str(i) for i in (profile.research_interests or [])]
         if not interests:
-            desired = [str(s) for s in (opp.desired_skills or [])]
+            desired = _safe_skills(opp.desired_skills)
             return ResearchMatchSchema(
                 opportunity=_coerce_opportunity(opp),
                 fit_score=0.0,
@@ -290,6 +332,24 @@ class ResearchService(BaseService):
 
     async def draft_pitch(self, opportunity_id: uuid.UUID) -> Artifact:
         from app.llm.router import complete
+
+        # Rate limit: max 5 pitches per user per hour (#17)
+        one_hour_ago = datetime.now(UTC) - timedelta(hours=1)
+        recent_count = (
+            await self.db.execute(
+                select(func.count()).select_from(Artifact).where(
+                    Artifact.user_id == self.user_id,
+                    Artifact.type == "research_pitch",
+                    Artifact.created_at >= one_hour_ago,
+                )
+            )
+        ).scalar_one()
+        if recent_count >= 5:
+            raise APIError(
+                429,
+                "RATE_LIMITED",
+                "You've generated 5 pitches in the last hour — please wait before drafting more.",
+            )
 
         opp = await self._get_opportunity(opportunity_id)
         profile = await self._get_profile()
@@ -419,7 +479,12 @@ class ResearchService(BaseService):
                         content, desired_list, skills, project_techs, experience_text
                     )
                 except Exception as exc:
-                    logger.warning("draft_pitch retry failed, keeping first attempt: %s", exc)
+                    logger.error("draft_pitch grounding retry failed: %s", exc)
+                    raise APIError(
+                        500,
+                        "PITCH_FABRICATION",
+                        "Draft contained unsupported claims and the retry failed — please try again.",
+                    ) from exc
 
         artifact = Artifact(
             user_id=self.user_id,
@@ -428,7 +493,7 @@ class ResearchService(BaseService):
             content=content,
             ats_score=None,
             missing_keywords=[],
-            grounding_score=gs,
+            grounding_score=max(0.0, gs) if gs is not None else 0.0,  # never None (#3)
             predicted_response=None,
             version=1,
         )
@@ -471,6 +536,28 @@ class ResearchService(BaseService):
             if artifact.application_id is not None:
                 raise APIError(400, "INVALID_ARTIFACT", "Artifact is already associated with an application")
 
+        # Clean up orphaned research_pitch artifacts older than 24 h (#4)
+        cutoff = datetime.now(UTC) - timedelta(hours=24)
+        orphaned = list(
+            (
+                await self.db.execute(
+                    select(Artifact).where(
+                        Artifact.user_id == self.user_id,
+                        Artifact.type == "research_pitch",
+                        Artifact.created_at < cutoff,
+                        ~select(ResearchOutreach.id)
+                        .where(ResearchOutreach.pitch_artifact_id == Artifact.id)
+                        .correlate(Artifact)
+                        .exists(),
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        for old in orphaned:
+            await self.db.delete(old)
+
         status = "drafted" if pitch_artifact_id is not None else "suggested"
         outreach = ResearchOutreach(
             user_id=self.user_id,
@@ -487,19 +574,30 @@ class ResearchService(BaseService):
     # list_outreach — user-scoped
     # ------------------------------------------------------------------
 
-    async def list_outreach(self) -> list[ResearchOutreachWithOpportunitySchema]:
+    async def list_outreach(
+        self, page: int = 1, limit: int = 50
+    ) -> tuple[list[ResearchOutreachWithOpportunitySchema], int]:
+        base = (
+            select(ResearchOutreach, ResearchOpportunity)
+            .join(
+                ResearchOpportunity,
+                ResearchOutreach.research_opportunity_id == ResearchOpportunity.id,
+            )
+            .where(ResearchOutreach.user_id == self.user_id)
+        )
+        total = (
+            await self.db.execute(
+                select(func.count()).select_from(base.subquery())
+            )
+        ).scalar_one()
         rows = (
             await self.db.execute(
-                select(ResearchOutreach, ResearchOpportunity)
-                .join(
-                    ResearchOpportunity,
-                    ResearchOutreach.research_opportunity_id == ResearchOpportunity.id,
-                )
-                .where(ResearchOutreach.user_id == self.user_id)
-                .order_by(ResearchOutreach.created_at.desc())
+                base.order_by(ResearchOutreach.created_at.desc())
+                .limit(limit)
+                .offset((page - 1) * limit)
             )
         ).all()
-        return [
+        items = [
             ResearchOutreachWithOpportunitySchema(
                 id=o.id,
                 opportunity_id=o.research_opportunity_id,
@@ -510,11 +608,14 @@ class ResearchService(BaseService):
                 ),
                 status=o.status,
                 pitch_id=o.pitch_artifact_id,
+                contacted_at=o.contacted_at,
+                replied_at=o.replied_at,
                 last_status_at=o.updated_at,
                 created_at=o.created_at,
             )
             for o, opp in rows
         ]
+        return items, int(total)
 
     # ------------------------------------------------------------------
     # update_status — 404 if not owned
@@ -530,11 +631,37 @@ class ResearchService(BaseService):
                 f"status must be one of {sorted(OUTREACH_STATUSES)}",
             )
         outreach = await self._get_outreach_owned(outreach_id)
+
+        # Enforce state machine (#5)
+        allowed = OUTREACH_TRANSITIONS.get(outreach.status, frozenset())
+        if status != outreach.status and status not in allowed:
+            raise APIError(
+                400,
+                "INVALID_TRANSITION",
+                f"Cannot move from '{outreach.status}' to '{status}'. "
+                f"Allowed next states: {sorted(allowed) or ['(terminal)']}"
+            )
+
+        prev_status = outreach.status
+        now = datetime.now(UTC)
         outreach.status = status
-        outreach.updated_at = datetime.now(UTC)
+        outreach.updated_at = now
+
+        # Track transition timestamps (#7)
+        if status == "contacted" and outreach.contacted_at is None:
+            outreach.contacted_at = now
+        if status in ("replied", "accepted", "declined") and outreach.replied_at is None:
+            outreach.replied_at = now
+
         self.db.add(outreach)
         await self.db.commit()
         await self.db.refresh(outreach)
+
+        # Structured audit log (#21)
+        logger.info(
+            "outreach_status_change: outreach=%s user=%s %s→%s",
+            outreach_id, self.user_id, prev_status, status,
+        )
         return outreach
 
 

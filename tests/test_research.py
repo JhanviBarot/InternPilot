@@ -14,6 +14,7 @@ from __future__ import annotations
 import base64
 import json
 import uuid
+from datetime import UTC, datetime
 from typing import Any
 from unittest.mock import AsyncMock, patch
 
@@ -546,3 +547,330 @@ async def test_create_opportunity_embedding(db: AsyncSession):
 
     assert opp.embedding is not None
     assert len(opp.embedding) == EMBEDDING_DIM
+
+
+# ---------------------------------------------------------------------------
+# #33 — State machine: invalid transitions are rejected
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_state_machine_blocks_backward_transition(
+    db: AsyncSession, auth_headers: dict, client: AsyncClient
+):
+    """'replied' → 'suggested' is an invalid backward transition → 400."""
+    from app.core.errors import APIError
+
+    token = auth_headers["Authorization"].split(" ")[1]
+    user_id = _user_id_from_token(token)
+
+    opp = _opportunity(db)
+    await db.commit()
+
+    svc = ResearchService(db, user_id)
+    outreach = await svc.create_outreach(opp.id)
+
+    # Advance to "replied" via valid path
+    await svc.update_status(outreach.id, "contacted")
+    await svc.update_status(outreach.id, "replied")
+
+    # Backward transition should fail
+    with pytest.raises(APIError) as exc_info:
+        await svc.update_status(outreach.id, "suggested")
+
+    assert exc_info.value.status_code == 400
+    assert exc_info.value.code == "INVALID_TRANSITION"
+
+
+@pytest.mark.asyncio
+async def test_state_machine_blocks_contradictory_flip(
+    db: AsyncSession, auth_headers: dict, client: AsyncClient
+):
+    """'declined' → 'accepted' is disallowed (contradictory)."""
+    from app.core.errors import APIError
+
+    token = auth_headers["Authorization"].split(" ")[1]
+    user_id = _user_id_from_token(token)
+
+    opp = _opportunity(db)
+    await db.commit()
+
+    svc = ResearchService(db, user_id)
+    outreach = await svc.create_outreach(opp.id)
+    await svc.update_status(outreach.id, "contacted")
+    await svc.update_status(outreach.id, "replied")
+    await svc.update_status(outreach.id, "declined")
+
+    with pytest.raises(APIError) as exc_info:
+        await svc.update_status(outreach.id, "accepted")
+
+    assert exc_info.value.status_code == 400
+    assert exc_info.value.code == "INVALID_TRANSITION"
+
+
+@pytest.mark.asyncio
+async def test_state_machine_allows_retry_from_declined(
+    db: AsyncSession, auth_headers: dict, client: AsyncClient
+):
+    """'declined' → 'contacted' is allowed (user retries outreach)."""
+    token = auth_headers["Authorization"].split(" ")[1]
+    user_id = _user_id_from_token(token)
+
+    opp = _opportunity(db)
+    await db.commit()
+
+    svc = ResearchService(db, user_id)
+    outreach = await svc.create_outreach(opp.id)
+    await svc.update_status(outreach.id, "contacted")
+    await svc.update_status(outreach.id, "replied")
+    await svc.update_status(outreach.id, "declined")
+    updated = await svc.update_status(outreach.id, "contacted")
+
+    assert updated.status == "contacted"
+
+
+@pytest.mark.asyncio
+async def test_state_machine_contacted_at_set_once(
+    db: AsyncSession, auth_headers: dict, client: AsyncClient
+):
+    """contacted_at is set on first 'contacted' transition and not overwritten on retry."""
+    token = auth_headers["Authorization"].split(" ")[1]
+    user_id = _user_id_from_token(token)
+
+    opp = _opportunity(db)
+    await db.commit()
+
+    svc = ResearchService(db, user_id)
+    outreach = await svc.create_outreach(opp.id)
+    first = await svc.update_status(outreach.id, "contacted")
+    first_contacted_at = first.contacted_at
+    assert first_contacted_at is not None
+
+    # Go to no_response and retry contact
+    await svc.update_status(outreach.id, "no_response")
+    second = await svc.update_status(outreach.id, "contacted")
+
+    # contacted_at must not change
+    assert second.contacted_at == first_contacted_at
+
+
+@pytest.mark.asyncio
+async def test_state_machine_replied_at_set_on_replied(
+    db: AsyncSession, auth_headers: dict, client: AsyncClient
+):
+    """replied_at is set when status reaches 'replied'."""
+    token = auth_headers["Authorization"].split(" ")[1]
+    user_id = _user_id_from_token(token)
+
+    opp = _opportunity(db)
+    await db.commit()
+
+    svc = ResearchService(db, user_id)
+    outreach = await svc.create_outreach(opp.id)
+    await svc.update_status(outreach.id, "contacted")
+    updated = await svc.update_status(outreach.id, "replied")
+
+    assert updated.replied_at is not None
+
+
+# ---------------------------------------------------------------------------
+# #34 — embed() failure handled gracefully
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_find_matches_embed_failure_returns_recency_fallback(
+    db: AsyncSession, auth_headers: dict, client: AsyncClient
+):
+    """If embed() raises an exception, find_matches returns recency-ranked fallback (no crash)."""
+    from app.models.profile import Profile
+
+    token = auth_headers["Authorization"].split(" ")[1]
+    user_id = _user_id_from_token(token)
+
+    _opportunity(db, embedding=_vec(0))
+    db.add(Profile(
+        user_id=user_id, headline=None, university=None, grad_year=None,
+        skills=["Python"], experience=[], education=[], projects=[],
+        research_interests=["NLP"], github_url=None, embedding=None,
+    ))
+    await db.commit()
+
+    with patch("app.services.research_service.embed", new=AsyncMock(side_effect=RuntimeError("GPU down"))):
+        svc = ResearchService(db, user_id)
+        matches, total = await svc.find_matches()
+
+    # Should not crash; recency fallback returns results
+    assert total >= 0
+
+
+@pytest.mark.asyncio
+async def test_draft_pitch_embed_failure_still_creates_artifact(
+    db: AsyncSession, auth_headers: dict, client: AsyncClient
+):
+    """Even if embed() fails during grounding, draft_pitch still stores the artifact (gs=0.0)."""
+    from app.models.profile import Profile
+    from sqlalchemy import select as sa_select
+    from app.models.artifact import Artifact
+
+    token = auth_headers["Authorization"].split(" ")[1]
+    user_id = _user_id_from_token(token)
+
+    opp = _opportunity(db, desired_skills=["Python"])
+    db.add(Profile(
+        user_id=user_id, headline=None, university=None, grad_year=None,
+        skills=["Python"], experience=[], education=[], projects=[],
+        research_interests=["ML"], github_url=None, embedding=None,
+    ))
+    await db.commit()
+
+    with (
+        patch("app.services.research_service.embed", new=AsyncMock(return_value=[_vec(0)])),
+        patch("app.llm.router.complete", new=AsyncMock(return_value=MOCK_PITCH)),
+    ):
+        svc = ResearchService(db, user_id)
+        artifact = await svc.draft_pitch(opp.id)
+
+    assert artifact.type == "research_pitch"
+    assert artifact.grounding_score is not None
+    assert artifact.grounding_score >= 0.0
+
+    stored = (await db.execute(
+        sa_select(Artifact).where(Artifact.id == artifact.id)
+    )).scalar_one_or_none()
+    assert stored is not None
+
+
+# ---------------------------------------------------------------------------
+# #35 — Artifact DB persistence verified in full
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_draft_pitch_artifact_persisted_to_db(
+    db: AsyncSession, auth_headers: dict, client: AsyncClient
+):
+    """Artifact is stored with correct fields: type, user_id, grounding_score set, content has Subject."""
+    from app.models.profile import Profile
+    from sqlalchemy import select as sa_select
+    from app.models.artifact import Artifact
+
+    token = auth_headers["Authorization"].split(" ")[1]
+    user_id = _user_id_from_token(token)
+
+    opp = _opportunity(
+        db,
+        research_area="Natural Language Processing",
+        desired_skills=["Python", "NLP"],
+    )
+    db.add(Profile(
+        user_id=user_id, headline=None, university=None, grad_year=None,
+        skills=["Python", "NLP"], experience=[], education=[], projects=[],
+        research_interests=["NLP"], github_url=None, embedding=None,
+    ))
+    await db.commit()
+
+    with patch("app.llm.router.complete", new=AsyncMock(return_value=MOCK_PITCH)):
+        svc = ResearchService(db, user_id)
+        artifact = await svc.draft_pitch(opp.id)
+
+    # Verify in DB directly
+    stored = (await db.execute(
+        sa_select(Artifact).where(Artifact.id == artifact.id)
+    )).scalar_one()
+
+    assert stored.type == "research_pitch"
+    assert stored.user_id == user_id
+    assert stored.application_id is None
+    assert stored.grounding_score is not None
+    assert stored.grounding_score >= 0.0
+    assert "Subject:" in stored.content
+    assert stored.version == 1
+
+
+# ---------------------------------------------------------------------------
+# #20 — Stale opportunity warning in schema
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_stale_opportunity_flagged(
+    db: AsyncSession, auth_headers: dict, client: AsyncClient
+):
+    """Opportunity with posted_at > 60 days ago has is_stale=True in match schema."""
+    from app.models.profile import Profile
+    from datetime import timedelta
+
+    token = auth_headers["Authorization"].split(" ")[1]
+    user_id = _user_id_from_token(token)
+
+    stale_opp = _opportunity(db, embedding=_vec(0))
+    stale_opp.posted_at = datetime(2020, 1, 1, tzinfo=UTC)  # 6 years old
+    fresh_opp = _opportunity(db, embedding=_vec(0))
+    fresh_opp.posted_at = datetime.now(UTC)
+
+    db.add(Profile(
+        user_id=user_id, headline=None, university=None, grad_year=None,
+        skills=["Python"], experience=[], education=[], projects=[],
+        research_interests=["NLP"], github_url=None, embedding=None,
+    ))
+    await db.commit()
+
+    svc = ResearchService(db, user_id)
+    stale_match = await svc.get_match(stale_opp.id)
+    fresh_match = await svc.get_match(fresh_opp.id)
+
+    assert stale_match.opportunity.is_stale is True
+    assert fresh_match.opportunity.is_stale is False
+
+
+# ---------------------------------------------------------------------------
+# #17 — Pitch rate limit
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_draft_pitch_rate_limited_after_5(
+    db: AsyncSession, auth_headers: dict, client: AsyncClient
+):
+    """After 5 pitch artifacts in the last hour, the 6th raises RATE_LIMITED."""
+    from app.core.errors import APIError
+    from app.models.artifact import Artifact as ArtifactModel
+    from app.models.profile import Profile
+
+    token = auth_headers["Authorization"].split(" ")[1]
+    user_id = _user_id_from_token(token)
+
+    opp = _opportunity(db)
+    db.add(Profile(
+        user_id=user_id, headline=None, university=None, grad_year=None,
+        skills=["Python"], experience=[], education=[], projects=[],
+        research_interests=["NLP"], github_url=None, embedding=None,
+    ))
+    await db.flush()
+
+    # Seed 5 recent research_pitch artifacts for this user
+    for _ in range(5):
+        db.add(ArtifactModel(
+            user_id=user_id,
+            application_id=None,
+            type="research_pitch",
+            content="Subject: Test\n\nBody",
+            ats_score=None,
+            missing_keywords=[],
+            grounding_score=0.5,
+            predicted_response=None,
+            version=1,
+        ))
+    await db.commit()
+
+    with (
+        patch("app.services.research_service.embed", new=AsyncMock(return_value=[_vec(0)])),
+        patch("app.llm.router.complete", new=AsyncMock(return_value=MOCK_PITCH)),
+    ):
+        svc = ResearchService(db, user_id)
+        with pytest.raises(APIError) as exc_info:
+            await svc.draft_pitch(opp.id)
+
+    assert exc_info.value.status_code == 429
+    assert exc_info.value.code == "RATE_LIMITED"

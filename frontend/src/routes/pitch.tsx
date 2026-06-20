@@ -101,16 +101,16 @@ function PitchInner({ o }: { o: ResearchOpportunity }) {
                     style={{ borderColor: "var(--color-hairline)" }}>
               <RefreshCw className={`h-3.5 w-3.5 ${drafting ? "animate-spin" : ""}`} /> {drafting ? "Drafting" : "Regenerate"}
             </button>
-            <button onClick={save} disabled={saving || !pitch}
+            <button onClick={save} disabled={saving || saved || !pitch}
                     className="inline-flex items-center gap-1.5 rounded-full bg-primary text-primary-foreground px-4 py-1.5 text-xs font-medium hover:bg-[color:var(--primary-hover)] disabled:opacity-60">
-              {saved ? <><Send className="h-3.5 w-3.5" /> Saved</> : <><Save className="h-3.5 w-3.5" /> Save to outreach</>}
+              {saving ? <><Save className="h-3.5 w-3.5 animate-pulse" /> Saving…</> : saved ? <><Send className="h-3.5 w-3.5" /> Saved</> : <><Save className="h-3.5 w-3.5" /> Save to outreach</>}
             </button>
           </div>
         </div>
 
         <div className="card-soft mt-6 p-8">
           <label className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground font-mono">To</label>
-          <div className="mt-1 font-mono text-sm">{o.professor_email}</div>
+          <div className="mt-1 font-mono text-sm">{o.professor_email || <span className="text-muted-foreground italic">Contact unknown — check lab website</span>}</div>
 
           <label className="mt-5 block text-[10px] uppercase tracking-[0.18em] text-muted-foreground font-mono">Subject</label>
           <input
