@@ -204,7 +204,7 @@ function IQChart({ points }: { points: { date: string; value: number }[] }) {
         <path d={area} fill="url(#d)" />
         <path d={path} fill="none" stroke="var(--color-primary)" strokeWidth="2.5" />
         {points.map((p, i) => <circle key={i} cx={xs(i)} cy={ys(p.value)} r="3.5" fill="white" stroke="var(--color-primary)" strokeWidth="2" />)}
-        {points.map((p, i) => <text key={p.date} x={xs(i)} y={h - 6} textAnchor="middle" fontSize="10" fill="currentColor" opacity="0.5" fontFamily="ui-monospace,monospace">{p.date}</text>)}
+        {points.map((p, i) => <text key={p.date} x={xs(i)} y={h - 6} textAnchor="middle" fontSize="10" fill="currentColor" opacity="0.5" fontFamily="ui-monospace,monospace">{new Date(p.date).toLocaleDateString(undefined, { month: "short", day: "numeric" })}</text>)}
       </svg>
     </div>
   );

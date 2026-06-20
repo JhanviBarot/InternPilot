@@ -12,10 +12,10 @@ export const Route = createFileRoute("/tracker")({
   component: Tracker,
 });
 
-const FOLLOWUP_DAYS = 14;
+const FOLLOWUP_DAYS = 7;
 
 function followupLabel(lastStatusAt: string): string {
-  const elapsed = Math.floor((Date.now() - new Date(lastStatusAt).getTime()) / 86_400_000);
+  const elapsed = Math.ceil((Date.now() - new Date(lastStatusAt).getTime()) / 86_400_000);
   const remaining = FOLLOWUP_DAYS - elapsed;
   return remaining <= 0 ? "follow up now" : `follow up in ${remaining}d`;
 }

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel
 
@@ -78,4 +79,7 @@ class CreateOutreachRequest(BaseModel):
 
 
 class UpdateOutreachRequest(BaseModel):
-    status: str
+    status: Literal[
+        "suggested", "drafted", "contacted", "replied",
+        "accepted", "declined", "no_response"
+    ]

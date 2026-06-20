@@ -146,7 +146,7 @@ class ResearchService(BaseService):
         desired = [str(s) for s in (opp.desired_skills or [])]
         matched, missing = _compute_skill_overlap(profile_skills, desired)
         semantic_sim = max(0.0, 1.0 - cosine_dist)
-        skill_ratio = len(matched) / max(1, len(desired)) if desired else 0.0
+        skill_ratio = 1.0 if not desired else len(matched) / len(desired)
         fit_score = max(
             0.0,
             min(1.0, SEMANTIC_WEIGHT * semantic_sim + SKILL_WEIGHT * skill_ratio),
@@ -306,7 +306,7 @@ class ResearchService(BaseService):
             skills = [str(s) for s in (profile.skills or [])]
             interests_list = [str(i) for i in (profile.research_interests or [])]
             interests_str = ", ".join(interests_list)
-            for proj in (profile.projects or []):
+            for proj in (profile.projects or []):  # noqa: WPS440
                 if isinstance(proj, dict):
                     for t in proj.get("tech", []):
                         project_techs.append(str(t))
@@ -329,6 +329,13 @@ class ResearchService(BaseService):
                         experience_text += " " + str(desc)
                     exp_parts.append(line)
             exp_bullets = "\n".join(f"  - {e}" for e in exp_parts)
+
+        if not skills and not project_techs and not experience_text.strip():
+            raise APIError(
+                400,
+                "INCOMPLETE_PROFILE",
+                "Complete your profile with skills, projects, or experience to draft a research pitch.",
+            )
 
         desired_str = ", ".join([str(s) for s in (opp.desired_skills or [])])
         allowed_set = set(skills) | set(project_techs)
@@ -444,12 +451,25 @@ class ResearchService(BaseService):
     ) -> ResearchOutreach:
         await self._get_opportunity(opportunity_id)  # 404 guard
 
+        existing = (
+            await self.db.execute(
+                select(ResearchOutreach).where(
+                    ResearchOutreach.user_id == self.user_id,
+                    ResearchOutreach.research_opportunity_id == opportunity_id,
+                )
+            )
+        ).scalar_one_or_none()
+        if existing is not None:
+            raise APIError(409, "OUTREACH_EXISTS", "You already have outreach for this opportunity")
+
         if pitch_artifact_id is not None:
             artifact = await self.db.get(Artifact, pitch_artifact_id)
             if artifact is None or artifact.user_id != self.user_id:
                 raise APIError(403, "FORBIDDEN", "Artifact not found or not owned by you")
             if artifact.type != "research_pitch":
                 raise APIError(400, "INVALID_ARTIFACT_TYPE", "Artifact must be of type 'research_pitch'")
+            if artifact.application_id is not None:
+                raise APIError(400, "INVALID_ARTIFACT", "Artifact is already associated with an application")
 
         status = "drafted" if pitch_artifact_id is not None else "suggested"
         outreach = ResearchOutreach(

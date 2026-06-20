@@ -125,7 +125,7 @@ class TrackerService(BaseService):
                         selectinload(Application.artifacts),
                         selectinload(Application.outcomes),
                     )
-                    .order_by(Application.last_status_at.desc())
+                    .order_by(Application.last_status_at.desc(), Application.id.desc())
                     .limit(limit)
                     .offset((page - 1) * limit)
                 )
@@ -187,8 +187,8 @@ class TrackerService(BaseService):
             app.notes = notes
         self.db.add(app)
         await self.db.commit()
-        app2 = await self._get_application_owned(application_id)
-        return await self._build_schema(app2)
+        await self.db.refresh(app)
+        return await self._build_schema(app)
 
     # ------------------------------------------------------------------
     # draft_followup — LLM follow-up message generation
@@ -293,7 +293,13 @@ class TrackerService(BaseService):
         )
         self.db.add(outcome)
 
-        if responded and app.status not in ("interview", "offer", "rejected"):
+        if outcome_type in ("no_response", "bounced") and app.status not in (
+            "interview", "offer", "rejected", "ghosted"
+        ):
+            app.status = "ghosted"
+            app.last_status_at = datetime.now(UTC)
+            self.db.add(app)
+        elif responded and app.status not in ("interview", "offer", "rejected"):
             app.status = "responded"
             app.last_status_at = datetime.now(UTC)
             self.db.add(app)

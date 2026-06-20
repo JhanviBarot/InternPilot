@@ -38,8 +38,13 @@ function Outreach() {
   useEffect(() => { if (data) setLocal(data); }, [data]);
 
   const setStatus = async (id: string, status: ResearchOutreachStatus) => {
+    const previous = local;
     setLocal((cur) => cur.map((x) => x.id === id ? { ...x, status } : x));
-    await api.setResearchOutreachStatus(id, status);
+    try {
+      await api.setResearchOutreachStatus(id, status);
+    } catch {
+      setLocal(previous);
+    }
   };
 
   return (
@@ -80,7 +85,7 @@ function Outreach() {
                   </div>
                   <div className="text-sm text-muted-foreground truncate">{r.opportunity.institution}</div>
                   <StatusPicker status={r.status} onChange={(s) => setStatus(r.id, s)} />
-                  <div className="text-right text-xs text-muted-foreground font-mono">{r.last_status_at}</div>
+                  <div className="text-right text-xs text-muted-foreground font-mono">{new Date(r.last_status_at).toLocaleDateString(undefined, { month: "short", day: "numeric" })}</div>
                 </div>
               ))}
             </div>

@@ -30,6 +30,7 @@ Platform IQ formula (evaluate_now only):
 from __future__ import annotations
 
 import logging
+import math
 import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -147,7 +148,10 @@ def platform_iq(metrics: MetricResult) -> float:
     """
     resp = 1.0 - metrics.response_brier if not metrics.insufficient else 0.0
     ghost = metrics.ghost_f1 if not metrics.insufficient else 0.0
-    return max(0.0, min(100.0, 100.0 * (W_RESP * resp + W_GHOST * ghost)))
+    raw = 100.0 * (W_RESP * resp + W_GHOST * ghost)
+    if not math.isfinite(raw):
+        return 0.0
+    return max(0.0, min(100.0, raw))
 
 
 # ---------------------------------------------------------------------------
@@ -161,9 +165,15 @@ def _dedupe_latest(
     """Keep the latest Outcome per Application (one outcome per application)."""
     seen: dict[uuid.UUID, tuple[Application, Outcome]] = {}
     for app, outcome in rows:
-        if app.id not in seen or outcome.recorded_at > seen[app.id][1].recorded_at:
+        if app.id not in seen:
             seen[app.id] = (app, outcome)
-    return sorted(seen.values(), key=lambda x: x[1].recorded_at)
+        else:
+            prev_out = seen[app.id][1]
+            if outcome.recorded_at > prev_out.recorded_at or (
+                outcome.recorded_at == prev_out.recorded_at and outcome.id > prev_out.id
+            ):
+                seen[app.id] = (app, outcome)
+    return sorted(seen.values(), key=lambda x: (x[1].recorded_at, x[1].id))
 
 
 def _calibrate_and_predict(
@@ -379,7 +389,7 @@ class EvaluationService:
                 await self.db.execute(
                     select(Evaluation)
                     .where(Evaluation.model_version.like("logreg_%"))
-                    .order_by(Evaluation.run_at.asc())
+                    .order_by(Evaluation.run_at.asc(), Evaluation.id.asc())
                 )
             )
             .scalars()
